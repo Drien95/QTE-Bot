@@ -9,10 +9,11 @@ from pathlib import Path
 import cv2
 
 from qte_bot.config import Config, load_config
+from qte_bot.paths import APP_DIR
 from qte_bot.detector import find_prompt
 from qte_bot.recognizer import Recognizer, font_templates, load_templates
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = APP_DIR
 TEMPLATES_DIR = ROOT / "templates"
 CAPTURES_DIR = ROOT / "captures"
 GLYPHS_DIR = CAPTURES_DIR / "lettres"  # lettres brutes en attente d'étiquetage (--label)
@@ -115,7 +116,8 @@ def _report_crash() -> None:
         pass
 
 
-if __name__ == "__main__":
+def entry() -> None:
+    """Point d'entrée commun (run.bat, QTE-Bot.exe) : sortie redirigée, plantage jamais silencieux."""
     _setup_output()
     try:
         sys.exit(main())
@@ -124,3 +126,7 @@ if __name__ == "__main__":
     except Exception:
         _report_crash()
         sys.exit(1)
+
+
+if __name__ == "__main__":
+    entry()

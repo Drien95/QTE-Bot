@@ -30,6 +30,7 @@ class Overlay:
     def __init__(self, root: tk.Tk, region: dict[str, int], feed: HudFeed, status: Callable[[], str]):
         self.feed, self.status = feed, status
         self.top = tk.Toplevel(root)
+        self.top.title("QTE Bot HUD")  # distinct du menu : la relance doit ramener le MENU au premier plan
         self.top.overrideredirect(True)
         self.top.geometry(f"{region['width']}x{region['height']}+{region['left']}+{region['top']}")
         self.top.configure(bg=KEY_COLOR)

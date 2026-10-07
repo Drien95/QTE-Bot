@@ -7,9 +7,11 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from qte_bot.paths import APP_DIR
+
 Rect = tuple[int, int, int, int]
 
-UI_TEMPLATES = Path(__file__).resolve().parent.parent / "templates" / "ui"
+UI_TEMPLATES = APP_DIR / "templates" / "ui"
 ROW_COUNT = 5
 BAR_MAX_WIDTH = 6         # barre d'accent colorée à gauche de chaque ligne (~4 px)
 BAR_HEIGHT = (35, 80)
