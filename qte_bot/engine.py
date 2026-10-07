@@ -17,10 +17,12 @@ from qte_bot.episodes import EpisodeLog, Summary
 from qte_bot.hud import HudFeed, Phase
 from qte_bot.recognizer import Recognizer
 from qte_bot.textlog import append_line
+from qte_bot.xp import XpTracker
 from qte_bot.tracker import PressTracker
 
 ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a pris la touche
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
+REPRESS_AFTER_MS = 150  # case encore là 150 ms après l'appui = pas prise : un 2e appui
 UI_KEY_HOLD_MS = 150   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
 
 Emit = Callable[[str], None]
@@ -32,6 +34,7 @@ class Stats:
     taken: int = 0     # appui pris par le jeu
     ignored: int = 0   # appui envoyé mais la case est restée
     missed: int = 0    # case vue, pas d'appui (lettre douteuse ou disparue avant le délai)
+    rescued: int = 0   # prises grâce au 2e appui
 
     def record(self, s: Summary) -> str:
         self.cases += 1
@@ -40,6 +43,9 @@ class Stats:
             return "PAS D'APPUI"
         if s.gone_after_press_ms is not None and s.gone_after_press_ms <= ACCEPTED_MAX_MS:
             self.taken += 1
+            if s.presses > 1:
+                self.rescued += 1
+                return "PRIS (2e)"
             return "PRIS"
         self.ignored += 1
         return "IGNORÉ ?"
@@ -70,13 +76,31 @@ class Engine:
         self._last_frame: np.ndarray | None = None
         self._origin = (0, 0)  # coin haut-gauche de la zone capturée, en coordonnées écran
         self._foreground_warned = False
-        self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe)
-
+        self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe, self._on_session)
+        self.xp = XpTracker()
+        self._repress = self.cfg.repress
+        self._hotkey_codes = dict(self.cfg.hotkeys)
+        self._rebuild = True  # le moteur reconstruit tracker/raccourcis au prochain tour
     # --- pilotage (appelable depuis un autre thread) ---
     def set_timing(self, timing: Timing) -> None:
         PressTracker(1, 1).set_delay(timing.delay_min_ms, timing.delay_max_ms)  # valide ou lève
         with self._lock:
             self._timing = timing
+
+    def set_repress(self, on: bool) -> None:
+        with self._lock:
+            self._repress, self._rebuild = on, True
+
+    def set_hotkeys(self, codes: dict[str, int]) -> None:
+        with self._lock:
+            self._hotkey_codes, self._rebuild = dict(codes), True
+
+    def _on_session(self, kind: str, difficulty: int, now: float) -> None:
+        if kind == "start":
+            self.xp.start_session(difficulty, now)
+            return
+        ok = self.xp.end_session(now)
+        self.emit(f"session {'RÉUSSIE' if ok else 'ratée'} · XP total {self.xp.total_xp}")
 
     def toggle(self) -> bool:
         with self._lock:
@@ -118,24 +142,33 @@ class Engine:
     def run(self) -> None:
         from qte_bot.io_win import Hotkeys, ScreenGrabber, press_key  # Windows uniquement
 
-        grabber, hotkeys = ScreenGrabber(self.cfg.roi), Hotkeys(self.cfg.hotkeys)
+        grabber = ScreenGrabber(self.cfg.roi)
         self._origin = (grabber.region["left"], grabber.region["top"])
-        tracker = PressTracker(self.cfg.confirm_frames, self.cfg.release_frames)
         episodes = EpisodeLog(self.cfg.release_frames, self._on_episode)
         period = 1.0 / self.cfg.fps
-        self.emit(f"zone capturée : {grabber.region} | ² pause/reprise, F9 image, F10 quitter")
+        tracker = hotkeys = None
+        self.emit("prêt : zone surveillée = tout l'écran principal")
         while not self._stop.is_set():
             start = time.perf_counter()
-            if self._handle_hotkeys(hotkeys.poll()):
-                tracker = PressTracker(self.cfg.confirm_frames, self.cfg.release_frames)
             with self._lock:
-                enabled, timing = self._enabled, self._timing
+                enabled, timing, rebuild = self._enabled, self._timing, self._rebuild
+                self._rebuild = False
+                repress, codes = self._repress, self._hotkey_codes
+            if rebuild:  # réglage changé depuis le menu : on repart d'un état propre
+                tracker = self._new_tracker(repress)
+                hotkeys = Hotkeys(codes)
+            if self._handle_hotkeys(hotkeys.poll()):
+                tracker = self._new_tracker(repress)
             if not enabled:  # en pause : ni capture ni CPU consommé
                 time.sleep(0.05)
                 continue
             tracker.set_delay(timing.delay_min_ms, timing.delay_max_ms)
             self._step(grabber, tracker, episodes, timing, press_key)
             time.sleep(max(0.0, period - (time.perf_counter() - start)))
+
+    def _new_tracker(self, repress: bool) -> PressTracker:
+        return PressTracker(self.cfg.confirm_frames, self.cfg.release_frames,
+                            repress_after_ms=REPRESS_AFTER_MS if repress else None)
 
     def _step(self, grabber, tracker: PressTracker, episodes: EpisodeLog, timing: Timing, press_key) -> None:
         from qte_bot.io_win import foreground_process
@@ -186,14 +219,17 @@ class Engine:
             self.stop()
         if "capture" in actions and self._last_frame is not None:
             self.emit(f"image -> {self._save(self._last_frame, 'frame')}")
+        if "auto" in actions:
+            self.auto.toggle()
         if "toggle" in actions:
-            self.emit("ACTIF" if self.toggle() else "EN PAUSE")
+            self.emit("QTE ACTIFS" if self.toggle() else "QTE EN PAUSE")
             return True
         return False
 
     # --- bilan par case ---
     def _on_episode(self, s: Summary) -> None:
         verdict = self.stats.record(s)
+        self.xp.record_case(verdict)
         if self.hud is not None:
             self.hud.result(self._screen_rect(s.snapshot.box), s.best.guess, verdict, time.perf_counter())
         if s.pressed:

@@ -7,8 +7,11 @@ MAX_DELAY_MS = 1000
 
 
 class PressTracker:
-    def __init__(self, confirm_frames: int, release_frames: int, rng: random.Random | None = None):
+    def __init__(self, confirm_frames: int, release_frames: int, rng: random.Random | None = None,
+                 repress_after_ms: int | None = None):
+        """`repress_after_ms` : si la case est encore là ce délai après l'appui, on réappuie UNE fois (None = jamais)."""
         self._confirm = confirm_frames
+        self._repress_after = None if repress_after_ms is None else repress_after_ms / 1000
         self._release = release_frames
         self._rng = rng or random.Random()
         self._delay_ms = (0, 0)
@@ -33,13 +36,20 @@ class PressTracker:
         else:
             self._streak += 1
         if label == self._pressed:
-            return None
+            return self._maybe_repress(label, now)
         if self._due is None and self._streak >= self._confirm:
             self._due = self._first_seen + self._rng.uniform(*self._delay_ms) / 1000
         if self._due is not None and now >= self._due:
-            self._pressed, self._due = label, None
+            self._pressed, self._due, self._pressed_at, self._repressed = label, None, now, False
             return label
         return None
+
+    def _maybe_repress(self, label: str, now: float) -> str | None:
+        """Case toujours affichée longtemps après l'appui = le jeu ne l'a pas pris : 2e et dernier essai."""
+        if self._repress_after is None or self._repressed or now - self._pressed_at < self._repress_after:
+            return None
+        self._repressed = True
+        return label
 
     @property
     def pressed(self) -> str | None:
@@ -59,3 +69,5 @@ class PressTracker:
         self._misses = 0
         self._first_seen = 0.0
         self._due: float | None = None
+        self._pressed_at = 0.0
+        self._repressed = False

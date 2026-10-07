@@ -12,9 +12,9 @@
   "min_margin": 0.15,
   "confirm_frames": 2,
   "release_frames": 4,
-  "hold_ms": 45,
-  "delay_min_ms": 100,
-  "delay_max_ms": 250,
+  "hold_ms": 40,
+  "delay_min_ms": 250,
+  "delay_max_ms": 400,
   "fps": 120,
   "game_process": "gmod.exe",
   "save_captures": false,
@@ -24,11 +24,15 @@
     ],
     "pause_min_s": 1,
     "pause_max_s": 3,
-    "max_sessions": 20
+    "max_sessions": 20,
+    "max_minutes": 0,
+    "interact_key": "e"
   },
   "hotkeys": {
     "toggle": "²",
+    "auto": "F7",
     "capture": "F9",
     "quit": "F10"
-  }
+  },
+  "repress": true
 }

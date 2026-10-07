@@ -29,7 +29,8 @@ class Episode:
     votes: dict[str, int] = field(default_factory=dict)
     first_seen: float = 0.0
     last_seen: float = 0.0
-    pressed_at: float | None = None
+    pressed_at: float | None = None  # DERNIER appui (un réappui réussi compte comme pris)
+    presses: int = 0
 
 
 @dataclass(frozen=True)
@@ -42,7 +43,8 @@ class Summary:
     snapshot: Snapshot
     visible_ms: float               # durée totale d'affichage de la case
     press_after_ms: float | None    # apparition -> appui (notre réactivité)
-    gone_after_press_ms: float | None  # appui -> disparition : court = le jeu a pris la touche
+    gone_after_press_ms: float | None  # dernier appui -> disparition : court = le jeu a pris la touche
+    presses: int = 0
 
 
 class EpisodeLog:
@@ -63,8 +65,8 @@ class EpisodeLog:
         self._misses = 0
         ep = self._current = self._current or Episode(first_seen=now)
         ep.last_seen = now
-        if pressed and ep.pressed_at is None:
-            ep.pressed_at = now
+        if pressed:
+            ep.pressed_at, ep.presses = now, ep.presses + 1
         ep.frames += 1
         ep.recognized += match.label is not None
         ep.votes[match.guess] = ep.votes.get(match.guess, 0) + 1
@@ -79,4 +81,5 @@ class EpisodeLog:
         self._on_end(Summary(ep.frames, ep.recognized, ep.pressed, ep.best, ep.votes, ep.snapshot,
                              visible_ms=ms(ep.first_seen, ep.last_seen),
                              press_after_ms=None if pressed is None else ms(ep.first_seen, pressed),
-                             gone_after_press_ms=None if pressed is None else ms(pressed, ep.last_seen)))
+                             gone_after_press_ms=None if pressed is None else ms(pressed, ep.last_seen),
+                             presses=ep.presses))

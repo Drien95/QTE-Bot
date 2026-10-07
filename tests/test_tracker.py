@@ -87,3 +87,31 @@ def test_progress_reports_delay_countdown():
 
 def test_progress_is_none_without_pending_press():
     assert make().progress(0.0) is None
+
+
+def make_repress(after_ms=150):
+    tracker = PressTracker(1, 3, rng=random.Random(0), repress_after_ms=after_ms)
+    tracker.set_delay(0, 0)
+    return tracker
+
+
+def test_repress_once_if_box_still_visible():
+    # appui à t=0 ; case encore là à 0.15 s -> 2e appui ; jamais de 3e
+    out = feed(make_repress(), ["w"] * 12)
+    assert out[0] == "w" and out.count("w") == 2
+    assert out.index("w", 1) * FRAME >= 0.150
+
+
+def test_no_repress_when_box_vanishes():
+    out = feed(make_repress(), ["w", "w", None, None, None, None])
+    assert out.count("w") == 1
+
+
+def test_repress_disabled():
+    out = feed(make_repress(after_ms=None), ["w"] * 12)
+    assert out.count("w") == 1
+
+
+def test_repress_budget_resets_for_next_letter():
+    out = feed(make_repress(), ["w"] * 7 + ["a"] * 7)
+    assert out.count("w") == 2 and out.count("a") == 2

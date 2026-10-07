@@ -39,6 +39,8 @@ class Config:
     delay_max_ms: int
     fps: int
     hotkeys: dict[str, int]  # action -> virtual-key code
+    hotkey_names: dict[str, str]  # action -> nom écrit dans la config ("F7", "²", "P", "VK:118")
+    repress: bool            # réappuyer une fois si la case reste affichée après l'appui
     game_process: str        # exécutable du jeu : aucune action si une autre fenêtre est active
     save_captures: bool      # image annotée de chaque case (diagnostic) ; désactivé par défaut
     auto: AutoSettings
@@ -59,7 +61,9 @@ def load_config(path: Path) -> Config:
         delay_min_ms=int(raw.get("delay_min_ms", 0)),
         delay_max_ms=int(raw.get("delay_max_ms", 0)),
         fps=int(raw["fps"]),
-        hotkeys={action: _vk(name) for action, name in raw["hotkeys"].items()},
+        hotkeys={action: _vk(name) for action, name in _hotkey_names(raw).items()},
+        hotkey_names=_hotkey_names(raw),
+        repress=bool(raw.get("repress", True)),
         game_process=str(raw.get("game_process", "gmod.exe")).lower(),
         save_captures=bool(raw.get("save_captures", False)),
         auto=_auto(raw.get("auto", {})),
@@ -74,7 +78,17 @@ def _auto(raw: dict) -> AutoSettings:
         pause_min_s=round(float(raw.get("pause_min_s", 5))),  # anciennes configs en décimal : arrondies
         pause_max_s=round(float(raw.get("pause_max_s", 15))),
         max_sessions=int(raw.get("max_sessions", 20)),
+        max_minutes=int(raw.get("max_minutes", 0)),
+        interact_key=str(raw.get("interact_key", "e")).lower(),
     )
+
+
+DEFAULT_HOTKEYS = {"toggle": "²", "auto": "F7", "capture": "F9", "quit": "F10"}
+HOTKEY_ACTIONS = tuple(DEFAULT_HOTKEYS)
+
+
+def _hotkey_names(raw: dict) -> dict[str, str]:
+    return DEFAULT_HOTKEYS | {k: str(v) for k, v in raw.get("hotkeys", {}).items()}
 
 
 def _vk(name: str) -> int:
@@ -85,7 +99,11 @@ def _vk(name: str) -> int:
         if vk == 0:
             raise ValueError(f"hotkey {name!r} : aucune touche correspondante sur ce clavier")
         return vk
-    raise ValueError(f"hotkey inconnue : {name!r} (attendu F1..F12 ou {', '.join(SCANCODE_KEYS)})")
+    if len(name) == 1 and name.isascii() and name.isalnum():
+        return ord(name.upper())  # codes virtuels de A-Z et 0-9 = leur code ASCII majuscule
+    if name.upper().startswith("VK:") and name[3:].isdigit() and 1 <= int(name[3:]) <= 254:
+        return int(name[3:])
+    raise ValueError(f"raccourci inconnu : {name!r} (F1..F12, ², une lettre, un chiffre ou VK:<code>)")
 
 
 def _validate(cfg: Config) -> None:
@@ -99,7 +117,9 @@ def _validate(cfg: Config) -> None:
         "hold_ms dans [1, 200]": 1 <= cfg.hold_ms <= 200,
         "0 <= delay_min_ms <= delay_max_ms <= 1000": 0 <= cfg.delay_min_ms <= cfg.delay_max_ms <= 1000,
         "fps dans [10, 500]": 10 <= cfg.fps <= 500,
-        "hotkeys toggle/capture/quit requises": {"toggle", "capture", "quit"} <= cfg.hotkeys.keys(),
+        "raccourcis : une touche différente par action": len(set(cfg.hotkeys.values())) == len(cfg.hotkeys),
+        "raccourci sur une touche que le bot tape lui-même (lettre de QTE ou touche d'interaction)":
+            not set(cfg.hotkeys.values()) & {ord(c.upper()) for c in cfg.allowed_keys + cfg.auto.interact_key},
     }
     failed = [msg for msg, ok in checks.items() if not ok]
     try:
@@ -119,7 +139,16 @@ def save_timing(path: Path, delay_min_ms: int, delay_max_ms: int, hold_ms: int) 
 
 def save_auto(path: Path, auto: AutoSettings) -> None:
     _save(path, auto={"difficulties": sorted(auto.difficulties), "pause_min_s": auto.pause_min_s,
-                      "pause_max_s": auto.pause_max_s, "max_sessions": auto.max_sessions})
+                      "pause_max_s": auto.pause_max_s, "max_sessions": auto.max_sessions,
+                      "max_minutes": auto.max_minutes, "interact_key": auto.interact_key})
+
+
+def save_hotkeys(path: Path, names: dict[str, str]) -> None:
+    _save(path, hotkeys={action: names[action] for action in HOTKEY_ACTIONS})
+
+
+def save_repress(path: Path, enabled: bool) -> None:
+    _save(path, repress=enabled)
 
 
 def _save(path: Path, **changes) -> None:

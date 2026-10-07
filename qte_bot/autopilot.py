@@ -37,6 +37,8 @@ class AutoSettings:
     pause_min_s: int  # secondes entières
     pause_max_s: int
     max_sessions: int
+    max_minutes: int = 0      # arrêt programmé après N minutes (0 = pas de limite de durée)
+    interact_key: str = "e"   # touche « utiliser » du jeu pour ouvrir le menu
 
     def validate(self) -> None:
         if not self.difficulties or not self.difficulties <= set(DIFFICULTY_NAMES):
@@ -47,6 +49,10 @@ class AutoSettings:
             raise ValueError("pause invalide : il faut 0 <= min <= max <= 3600 s")
         if not 1 <= self.max_sessions <= 10_000:
             raise ValueError("nombre de sessions invalide (1 à 10000)")
+        if not 0 <= self.max_minutes <= 24 * 60:
+            raise ValueError("durée max invalide (0 à 1440 minutes, 0 = illimité)")
+        if len(self.interact_key) != 1 or not self.interact_key.isalnum():
+            raise ValueError("la touche d'interaction doit être une seule lettre ou un chiffre")
 
 
 @dataclass(frozen=True)
@@ -64,6 +70,7 @@ class Autopilot:
     press: Callable[[str], None]
     click: Callable[[int, int], None]
     rng: random.Random = field(default_factory=random.Random)
+    on_session: Callable[[str, int, float], None] | None = None  # ("start"|"end", difficulté, instant)
     state: State = State.IDLE
     reason: str = ""
     sessions_done: int = 0
@@ -74,6 +81,8 @@ class Autopilot:
     _last_qte: float = 0.0
     _now: float = 0.0
     _in_front: bool = True
+    _started_at: float | None = None
+    _session_difficulty: int | None = None  # difficulté choisie par NOUS (None = session lancée à la main)
 
     def __post_init__(self) -> None:
         self.settings.validate()
@@ -82,6 +91,7 @@ class Autopilot:
         if self.state is State.STOPPED:
             return
         self._now, self._in_front = o.now, o.foreground
+        self._started_at = o.now if self._started_at is None else self._started_at
         if o.katana_warning:
             return self._stop("katana pas en main : sors-le puis relance l'automatisation")
         if not o.foreground:  # jamais de touche ni de clic dans une autre fenêtre
@@ -104,11 +114,13 @@ class Autopilot:
     # --- états ---
     def _idle(self, o: Observation) -> None:
         if o.qte_visible:
-            return self._enter_training(o.now)
+            return self._enter_training(o.now, mine=False)
+        if self._time_is_up(o.now):
+            return self._stop(f"durée max de {self.settings.max_minutes} min atteinte")
         if o.menu_rows:
             return self._choose(o)
         if o.now >= self._next_action:
-            self.press("e")
+            self.press(self.settings.interact_key)
             self._wait(State.WAIT_MENU, o.now + MENU_TIMEOUT_S)
 
     def _wait_menu(self, o: Observation) -> None:
@@ -120,7 +132,7 @@ class Autopilot:
     def _wait_start(self, o: Observation) -> None:
         if o.qte_visible:
             self.failures = 0
-            self._enter_training(o.now)
+            self._enter_training(o.now, mine=True)
         elif o.now >= self._deadline:
             self._fail(o.now, "l'entraînement ne démarre pas après le clic")
 
@@ -131,8 +143,13 @@ class Autopilot:
         if o.now - self._last_qte < SESSION_END_S:
             return
         self.sessions_done += 1
+        if self._session_difficulty is not None and self.on_session:
+            self.on_session("end", self._session_difficulty, o.now)
+        self._session_difficulty = None
         if self.sessions_done >= self.settings.max_sessions:
             return self._stop(f"limite de {self.settings.max_sessions} sessions atteinte")
+        if self._time_is_up(o.now):
+            return self._stop(f"durée max de {self.settings.max_minutes} min atteinte")
         pause = self.rng.randint(self.settings.pause_min_s, self.settings.pause_max_s)  # secondes entières
         self._wait(State.COOLDOWN, o.now + pause)
 
@@ -147,8 +164,15 @@ class Autopilot:
         self.click(x + w // 3, y + h // 2)
         self._wait(State.WAIT_START, o.now + START_TIMEOUT_S)
 
-    def _enter_training(self, now: float) -> None:
+    def _enter_training(self, now: float, mine: bool) -> None:
         self.state, self._last_qte = State.TRAINING, now
+        self._session_difficulty = self.last_difficulty if mine else None
+        if self._session_difficulty is not None and self.on_session:
+            self.on_session("start", self._session_difficulty, now)
+
+    def _time_is_up(self, now: float) -> bool:
+        limit = self.settings.max_minutes
+        return limit > 0 and self._started_at is not None and now - self._started_at >= limit * 60
 
     def _wait(self, state: State, deadline: float) -> None:
         self.state, self._deadline = state, deadline

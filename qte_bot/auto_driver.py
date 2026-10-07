@@ -17,8 +17,10 @@ Click = Callable[[int, int], None]
 
 
 class AutoDriver:
-    def __init__(self, settings: AutoSettings, press: Press, click: Click, emit: Callable[[str], None]):
+    def __init__(self, settings: AutoSettings, press: Press, click: Click, emit: Callable[[str], None],
+                 on_session: Callable[[str, int, float], None] | None = None):
         settings.validate()
+        self._on_session = on_session
         self._lock = threading.Lock()
         self._settings = settings
         self._press, self._click, self._emit = press, click, emit
@@ -38,13 +40,22 @@ class AutoDriver:
 
     def set_enabled(self, on: bool) -> None:
         with self._lock:
-            self._pilot = Autopilot(self._settings, self._press, self._click) if on else None
+            self._pilot = Autopilot(self._settings, self._press, self._click, on_session=self._on_session) if on else None
         self._emit("AUTOMATISATION ACTIVÉE" if on else "Automatisation désactivée")
 
     @property
     def status(self) -> str:
         with self._lock:
             return "désactivée" if self._pilot is None else self._pilot.status
+
+    @property
+    def enabled(self) -> bool:
+        with self._lock:
+            return self._pilot is not None
+
+    def toggle(self) -> bool:
+        self.set_enabled(not self.enabled)
+        return self.enabled
 
     @property
     def running(self) -> bool:

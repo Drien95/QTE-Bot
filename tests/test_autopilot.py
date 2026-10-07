@@ -20,9 +20,10 @@ class Fake:
         self.actions.append(("click", x, y))
 
 
-def make(difficulties=(5,), max_sessions=20, pause=(5, 5)):
+def make(difficulties=(5,), max_sessions=20, pause=(5, 5), max_minutes=0, key="e"):
     fake = Fake()
-    pilot = Autopilot(AutoSettings(set(difficulties), *pause, max_sessions), fake.press, fake.click, random.Random(0))
+    settings = AutoSettings(set(difficulties), *pause, max_sessions, max_minutes=max_minutes, interact_key=key)
+    pilot = Autopilot(settings, fake.press, fake.click, random.Random(0))
     return pilot, fake
 
 
@@ -124,7 +125,9 @@ def test_training_started_by_hand_is_followed():
 
 def test_rejects_invalid_settings():
     for bad in [AutoSettings(set(), 5, 10, 20), AutoSettings({6}, 5, 10, 20),
-                AutoSettings({5}, 10, 5, 20), AutoSettings({5}, 5, 10, 0)]:
+                AutoSettings({5}, 10, 5, 20), AutoSettings({5}, 5, 10, 0),
+                AutoSettings({5}, 5, 10, 20, max_minutes=-1), AutoSettings({5}, 5, 10, 20, interact_key="ee"),
+                AutoSettings({5}, 5, 10, 20, interact_key="")]:
         with pytest.raises(ValueError):
             bad.validate()
 
@@ -145,3 +148,37 @@ def test_status_says_when_game_is_not_in_front():
 def test_pause_must_be_whole_seconds():
     with pytest.raises(ValueError):
         AutoSettings({5}, 2.5, 8, 20).validate()
+
+
+def test_custom_interact_key():
+    pilot, fake = make(key="f")
+    pilot.step(obs(0.0))
+    assert fake.actions[0] == ("press", "f")
+
+
+def test_stops_after_max_minutes_but_never_mid_session():
+    pilot, _ = make(max_minutes=1, pause=(0, 0))
+    pilot.step(obs(0.0))                      # démarrage du chrono + E
+    pilot.step(obs(0.3, menu=True))
+    pilot.step(obs(55.0, qte=True))           # session en cours au-delà de la minute...
+    pilot.step(obs(61.0, qte=True))
+    assert pilot.state is State.TRAINING      # ...on ne coupe pas au milieu
+    pilot.step(obs(64.0))                     # fin de session
+    assert pilot.state is State.STOPPED and "min" in pilot.reason
+
+
+def test_session_callbacks_report_difficulty():
+    events = []
+    pilot, _ = make(difficulties=(4,))
+    pilot.on_session = lambda kind, diff, now: events.append((kind, diff))
+    run_session(pilot, 0.0)
+    assert events == [("start", 4), ("end", 4)]
+
+
+def test_manual_session_has_no_callbacks():
+    events = []
+    pilot, _ = make()
+    pilot.on_session = lambda kind, diff, now: events.append(kind)
+    pilot.step(obs(0.0, qte=True))
+    pilot.step(obs(5.0))
+    assert events == []

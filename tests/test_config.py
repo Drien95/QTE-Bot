@@ -35,7 +35,7 @@ def test_shipped_config_is_valid():
     {"auto": {"difficulties": [5], "pause_min_s": 20, "pause_max_s": 15, "max_sessions": 20}},
     {"game_process": "gmod"},
     {"hotkeys": {"toggle": "F8", "capture": "F9", "quit": "ESC"}},
-    {"hotkeys": {"toggle": "F8", "capture": "F9"}},
+    {"hotkeys": {"toggle": "F8", "auto": "F8"}},  # même touche pour deux actions
 ])
 def test_rejects_invalid_config(tmp_path, overrides):
     with pytest.raises(ValueError):
@@ -77,3 +77,30 @@ def test_save_auto_roundtrip(tmp_path):
     save_auto(path, AutoSettings({3, 5}, 2, 8, 7))
     auto = load_config(path).auto
     assert (auto.difficulties, auto.pause_min_s, auto.pause_max_s, auto.max_sessions) == ({3, 5}, 2, 8, 7)
+
+
+HOTKEYS = {"toggle": "²", "auto": "F7", "capture": "F9", "quit": "F10"}
+
+
+def test_hotkeys_accept_letters_digits_and_vk_codes(tmp_path):
+    cfg = load_config(write(tmp_path, hotkeys=HOTKEYS | {"auto": "P", "quit": "VK:123"}))
+    assert cfg.hotkeys["auto"] == ord("P") and cfg.hotkeys["quit"] == 123
+
+
+@pytest.mark.parametrize("bad", [
+    HOTKEYS | {"auto": "Z"},          # Z est une lettre de QTE : le bot la tape lui-même
+    HOTKEYS | {"auto": "E"},          # touche d'interaction de l'automatisation
+    HOTKEYS | {"auto": "F10"},        # même touche pour deux actions
+    HOTKEYS | {"auto": "VK:9999"},
+])
+def test_rejects_conflicting_or_invalid_hotkeys(tmp_path, bad):
+    with pytest.raises(ValueError):
+        load_config(write(tmp_path, hotkeys=bad))
+
+
+def test_save_hotkeys_roundtrip(tmp_path):
+    from qte_bot.config import save_hotkeys
+
+    path = write(tmp_path, hotkeys=HOTKEYS)
+    save_hotkeys(path, HOTKEYS | {"auto": "VK:118"})
+    assert load_config(path).hotkey_names["auto"] == "VK:118"

@@ -47,3 +47,10 @@ def test_no_press_timings_when_not_pressed():
     weak = Match(None, 0.3, "a", 0.05)
     s = run([(weak, None), (None, None), (None, None)])[0]
     assert s.press_after_ms is None and s.gone_after_press_ms is None
+
+
+def test_repress_counts_from_last_press():
+    ok = Match("w", 1.0, "w", 0.8)
+    # appui à t=0.1, réappui à t=0.3, case disparue juste après
+    s = run([(ok, None), (ok, "w"), (ok, None), (ok, "w"), (None, None), (None, None)])[0]
+    assert s.presses == 2 and s.gone_after_press_ms == 0
