@@ -6,7 +6,7 @@ import time
 import tkinter as tk
 from typing import Callable
 
-from qte_bot.hud import HudFeed, Mark, Phase
+from qte_bot.hud import HudFeed, HudStatus, Mark, Phase, thousands
 
 FRAME_MS = 33              # ~30 rafraîchissements/s
 KEY_COLOR = "#010203"      # couleur rendue transparente (jamais utilisée pour dessiner)
@@ -27,7 +27,7 @@ WDA_EXCLUDEFROMCAPTURE = 0x11  # Windows 10 2004+ : la fenêtre n'apparaît dans
 
 
 class Overlay:
-    def __init__(self, root: tk.Tk, region: dict[str, int], feed: HudFeed, status: Callable[[], str]):
+    def __init__(self, root: tk.Tk, region: dict[str, int], feed: HudFeed, status: Callable[[], HudStatus]):
         self.feed, self.status = feed, status
         self.top = tk.Toplevel(root)
         self.top.title("QTE Bot HUD")  # distinct du menu : la relance doit ramener le MENU au premier plan
@@ -52,8 +52,60 @@ class Overlay:
             self.canvas.delete("all")
             for mark in self.feed.marks(time.perf_counter()):
                 _draw_mark(self.canvas, mark)
-            self.canvas.create_text(18, 112, anchor="nw", text=self.status(), fill="#00e5ff", font=FONT)
+            _draw_status(self.canvas, self.status())
         self.top.after(FRAME_MS, self._tick)
+
+
+# --- panneau d'état (haut gauche, sous le panneau « Missions » du jeu) ---
+PANEL_X, PANEL_Y, PANEL_W = 16, 108, 290
+PANEL_BG, PANEL_EDGE, MUTED, OFF_DOT = "#0b1016", "#1f2a36", "#7d8a99", "#3a4554"
+CYAN, GREEN, AMBER = COLORS[Phase.SEEN], COLORS[Phase.TAKEN], COLORS[Phase.WAITING]
+F_TITLE, F_SMALL = ("Segoe UI Semibold", 10), ("Segoe UI", 9)
+F_BIG, F_MID = ("Consolas", 18, "bold"), ("Consolas", 11, "bold")
+
+
+def _draw_status(c: tk.Canvas, s: HudStatus) -> None:
+    x, y, w = PANEL_X, PANEL_Y, PANEL_W
+    height = 128 + (24 if s.progress else 0)
+    c.create_rectangle(x, y, x + w, y + height, fill=PANEL_BG, outline=PANEL_EDGE)
+    _brackets(c, x, y, x + w, y + height, CYAN, arm=14)
+    c.create_text(x + 14, y + 12, anchor="nw", text="◢ QTE·BOT", fill=CYAN, font=F_TITLE)
+    if s.turbo:
+        c.create_rectangle(x + w - 78, y + 10, x + w - 12, y + 28, fill=AMBER, outline="")
+        c.create_text(x + w - 45, y + 19, text="⚡ TURBO", fill=PANEL_BG, font=F_SMALL)
+    _dot(c, x + 16, y + 44, s.qte_on, GREEN, "QTE " + ("actifs" if s.qte_on else "en pause"))
+    _dot(c, x + 150, y + 44, s.auto_on, CYAN, "AUTO " + ("en marche" if s.auto_on else "arrêtée"))
+    c.create_text(x + 14, y + 58, anchor="nw", text=thousands(s.xp), fill=CYAN, font=F_BIG)
+    c.create_text(x + 14, y + 84, anchor="nw", text="XP gagnée", fill=MUTED, font=F_SMALL)
+    c.create_text(x + 150, y + 64, anchor="nw", text=f"{thousands(s.xp_per_hour)} /h", fill=CYAN, font=F_MID)
+    c.create_text(x + 150, y + 84, anchor="nw", text=f"touches {s.taken}/{s.cases}", fill=MUTED, font=F_SMALL)
+    row = y + 104
+    if s.progress:
+        _progress(c, x + 14, row, w - 28, *s.progress)
+        row += 24
+    c.create_text(x + 14, row, anchor="nw", text=_auto_line(s), fill=MUTED, font=F_SMALL)
+
+
+def _dot(c: tk.Canvas, x: int, y: int, on: bool, color: str, text: str) -> None:
+    c.create_oval(x - 4, y - 4, x + 4, y + 4, fill=color if on else OFF_DOT, outline="")
+    c.create_text(x + 10, y, anchor="w", text=text, fill="#e6edf3" if on else MUTED, font=F_SMALL)
+
+
+def _progress(c: tk.Canvas, x: int, y: int, w: int, taken: int, expected: int | None, difficulty: str) -> None:
+    """Barre de la session en cours ; sans nombre attendu connu, juste le compteur."""
+    label = f"{difficulty}  {taken}/{expected}" if expected else f"{difficulty}  {taken} case(s)"
+    c.create_text(x, y, anchor="nw", text=label, fill="#e6edf3", font=F_SMALL)
+    bar_y = y + 16
+    c.create_rectangle(x, bar_y, x + w, bar_y + 5, fill=PANEL_EDGE, outline="")
+    if expected:
+        c.create_rectangle(x, bar_y, x + int(w * min(1.0, taken / expected)), bar_y + 5, fill=GREEN, outline="")
+
+
+def _auto_line(s: HudStatus) -> str:
+    if not s.auto_on:
+        return "automatisation désactivée"
+    done = f"sessions {s.sessions[0]}/{s.sessions[1]}" if s.sessions else ""
+    return f"{done}  ·  {s.auto_state}" if done else s.auto_state
 
 
 def _make_ghost(top: tk.Toplevel) -> None:

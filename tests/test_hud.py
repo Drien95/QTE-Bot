@@ -29,3 +29,17 @@ def test_fade_goes_from_1_to_0():
     feed.result((0, 0, 10, 10), "a", "IGNORÉ ?", now=0.0)
     assert feed.marks(now=0.0)[0].fade == 1.0
     assert 0.0 < feed.marks(now=RESULT_MS / 1000 * 0.9)[0].fade < 0.2
+
+
+def test_status_fields_have_safe_defaults():
+    from qte_bot.hud import HudStatus
+
+    s = HudStatus()
+    assert not s.qte_on and not s.auto_on and s.progress is None and s.xp == 0
+
+
+def test_thousands_formatting():
+    from qte_bot.hud import thousands
+
+    nbsp = " "  # espace fine insécable
+    assert thousands(1785) == f"1{nbsp}785" and thousands(0) == "0" and thousands(12300.4) == f"12{nbsp}300"

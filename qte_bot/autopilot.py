@@ -124,6 +124,25 @@ class Autopilot:
             return f"pause : {left} s restantes{diff} · sessions {done}"
         return f"{self.state.value}{diff} · sessions {done}"
 
+    @property
+    def progress(self) -> tuple[int, int | None, str] | None:
+        """(cases prises, cases attendues ou None, difficulté) pendant une session lancée par nous, sinon None."""
+        if self.state is not State.TRAINING or self._session_difficulty is None:
+            return None
+        d = self._session_difficulty
+        return self._cases_taken, self.expected_cases(d), DIFFICULTY_NAMES[d]
+
+    @property
+    def short_state(self) -> str:
+        """État en quelques mots, pour le HUD."""
+        if self.state is State.STOPPED:
+            return f"arrêté : {self.reason}"
+        if not self._in_front:
+            return "jeu pas au premier plan"
+        if self.state is State.COOLDOWN:
+            return f"pause {max(0, math.ceil(self._deadline - self._now))} s"
+        return self.state.value
+
     # --- états ---
     def _idle(self, o: Observation) -> None:
         if o.qte_visible:

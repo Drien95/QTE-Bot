@@ -289,3 +289,19 @@ def test_failed_session_does_not_teach_a_count():
         pilot.step(obs(t + 3.1))
         t += 4.0
     assert pilot.expected_cases(3) is None
+
+
+def test_progress_reports_current_session():
+    pilot, _ = make(difficulties=(5,))
+    assert pilot.progress is None                     # pas en entraînement
+    start_session(pilot, 0.0)
+    pilot.case_done(True, 1.0)
+    pilot.case_done(True, 2.0)
+    assert pilot.progress == (2, 11, "Extrême")       # Extrême : 11 cases connues
+
+
+def test_short_state_for_hud():
+    pilot, _ = make(pause=(10, 10))
+    assert pilot.short_state == "attente"
+    run_session(pilot, 0.0)
+    assert pilot.short_state.startswith("pause")

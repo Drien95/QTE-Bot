@@ -10,7 +10,7 @@ from pathlib import Path
 from qte_bot.autopilot import DIFFICULTY_NAMES, AutoSettings
 from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing, save_turbo
 from qte_bot.engine import Engine, Timing
-from qte_bot.hud import HudFeed
+from qte_bot.hud import HudFeed, HudStatus
 from qte_bot.keys import key_label, spec_from_event
 from qte_bot.recognizer import Recognizer
 from qte_bot.textlog import append_line
@@ -282,13 +282,12 @@ class App:
         rates = [f"{DIFFICULTY_NAMES[d]} {st.rate:.0%}" for d, st in xp.by_difficulty.items() if st.rate is not None]
         self.detail.config(text=f"Réussite : {' · '.join(rates) or '—'}   ·   sauvées en insistant : {s.rescued}")
 
-    def hud_status(self) -> str:
-        xp, timing = self.engine.xp, self.engine.timing
-        turbo = "  ⚡TURBO" if self.engine.turbo else ""
-        return (f"◢ QTE·BOT  {'ACTIF' if self.engine.enabled else 'PAUSE'}{turbo}\n"
-                f"  délai {timing.delay_min_ms}–{timing.delay_max_ms} ms\n"
-                f"  XP {xp.total_xp} · {xp.xp_per_hour(time.perf_counter()):.0f}/h\n"
-                f"  auto : {self.engine.auto.status}")
+    def hud_status(self) -> HudStatus:
+        e, snap = self.engine, self.engine.auto.snapshot
+        state, progress, sessions = (snap[0], snap[1], (snap[2], snap[3])) if snap else ("désactivée", None, None)
+        return HudStatus(qte_on=e.enabled, auto_on=snap is not None, turbo=e.turbo, xp=e.xp.total_xp,
+                         xp_per_hour=e.xp.xp_per_hour(time.perf_counter()), taken=e.stats.taken,
+                         cases=e.stats.cases, auto_state=state, progress=progress, sessions=sessions)
 
     def _emit(self, line: str) -> None:
         """Affiché dans le journal ET gardé sur disque (horodaté à la ms) pour diagnostiquer après coup."""

@@ -35,5 +35,5 @@
     "quit": "F10"
   },
   "repress": true,
-  "turbo": true
+  "turbo": false
 }

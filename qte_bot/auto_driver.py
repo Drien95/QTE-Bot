@@ -59,6 +59,15 @@ class AutoDriver:
             return "désactivée" if self._pilot is None else self._pilot.status
 
     @property
+    def snapshot(self) -> tuple[str, tuple[int, int | None, str] | None, int, int] | None:
+        """(état court, progression, sessions faites, sessions max) pour le HUD ; None si désactivée."""
+        with self._lock:
+            p = self._pilot
+            if p is None:
+                return None
+            return p.short_state, p.progress, p.sessions_done, p.settings.max_sessions
+
+    @property
     def enabled(self) -> bool:
         with self._lock:
             return self._pilot is not None

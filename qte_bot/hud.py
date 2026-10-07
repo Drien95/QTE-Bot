@@ -39,6 +39,26 @@ class _Result:
     at: float
 
 
+@dataclass(frozen=True)
+class HudStatus:
+    """Panneau d'état en haut à gauche : données seulement, le dessin est dans overlay.py."""
+    qte_on: bool = False
+    auto_on: bool = False
+    turbo: bool = False
+    xp: int = 0
+    xp_per_hour: float = 0.0
+    taken: int = 0
+    cases: int = 0
+    auto_state: str = "désactivée"
+    progress: tuple[int, int | None, str] | None = None  # (prises, attendues, difficulté)
+    sessions: tuple[int, int] | None = None              # (faites, max)
+
+
+def thousands(value: float) -> str:
+    """1785 -> « 1 785 » (espace fine insécable, lisible d'un coup d'œil)."""
+    return f"{round(value):,}".replace(",", " ")
+
+
 class HudFeed:
     """Écrit par le moteur (son thread), lu par l'overlay (thread tkinter)."""
 
