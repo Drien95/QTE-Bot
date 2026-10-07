@@ -193,19 +193,19 @@ def start_session(pilot, t, difficulty_rows=None):
 def test_session_ends_right_after_last_expected_case():
     pilot, _ = make(difficulties=(5,), pause=(10, 10))
     start_session(pilot, 0.0)
-    for i in range(12):                  # Extrême = 12 QTE
+    for i in range(11):                  # Extrême : 11 cases réellement affichées (le menu dit 12)
         pilot.case_done(True, 1.0 + i)
-    pilot.step(obs(12.2))                # 0,2 s après la 12e case : pas d'attente de 2,5 s
+    pilot.step(obs(11.2))                # 0,2 s après la 11e case : pas d'attente de 2,5 s
     assert pilot.state is State.COOLDOWN and pilot.sessions_done == 1
 
 
 def test_session_not_ended_before_last_case():
     pilot, _ = make(difficulties=(5,))
     start_session(pilot, 0.0)
-    for i in range(11):
+    for i in range(10):
         pilot.step(obs(0.9 + i, qte=True))   # cases successives à l'écran
         pilot.case_done(True, 1.0 + i)
-    pilot.step(obs(11.5))                     # 0,6 s après la 11e : on attend la 12e
+    pilot.step(obs(10.5))                     # 0,6 s après la 10e : on attend la 11e
     assert pilot.state is State.TRAINING
 
 
@@ -233,10 +233,10 @@ def test_turbo_skips_pause_between_sessions():
     pilot, fake = make(difficulties=(5,), pause=(10, 10))
     pilot.turbo = True
     start_session(pilot, 0.0)
-    for i in range(12):
+    for i in range(11):
         pilot.case_done(True, 1.0 + i)
-    pilot.step(obs(12.1))              # fin de session
-    pilot.step(obs(12.2))              # pas de pause : on relance tout de suite
+    pilot.step(obs(11.1))              # fin de session
+    pilot.step(obs(11.2))              # pas de pause : on relance tout de suite
     assert fake.actions[-1] == ("press", "e")
 
 
@@ -247,3 +247,45 @@ def test_turbo_retries_e_quickly():
     pilot.step(obs(0.8))               # menu absent après 0,7 s -> échec 1
     pilot.step(obs(1.4))               # nouvel essai 0,5 s plus tard
     assert fake.actions.count(("press", "e")) == 2
+
+
+def clean_session(pilot, t, cases):
+    start_session(pilot, t)
+    for i in range(cases):
+        pilot.step(obs(t + 1.0 + i * 0.9, qte=True))
+        pilot.case_done(True, t + 1.1 + i * 0.9)
+    end = t + 1.1 + cases * 0.9
+    return end
+
+
+def test_unknown_difficulty_falls_back_to_quiet_rule():
+    pilot, _ = make(difficulties=(3,), pause=(0, 0))
+    end = clean_session(pilot, 0.0, 7)
+    pilot.step(obs(end + 0.3))
+    assert pilot.state is State.TRAINING                 # nombre de cases pas encore connu
+    pilot.step(obs(end + 2.6))
+    assert pilot.sessions_done == 1
+
+
+def test_case_count_is_learned_after_two_identical_clean_sessions():
+    pilot, _ = make(difficulties=(3,), pause=(0, 0))
+    t = 0.0
+    for _ in range(2):                                   # deux sessions propres de 7 cases
+        end = clean_session(pilot, t, 7)
+        pilot.step(obs(end + 2.6))
+        t = end + 3.0
+    end = clean_session(pilot, t, 7)
+    pilot.step(obs(end + 0.2))                           # 3e : fin immédiate, plus d'attente
+    assert pilot.sessions_done == 3
+
+
+def test_failed_session_does_not_teach_a_count():
+    pilot, _ = make(difficulties=(3,), pause=(0, 0))
+    t = 0.0
+    for _ in range(2):
+        start_session(pilot, t)
+        pilot.case_done(True, t + 1.0)
+        pilot.case_done(False, t + 2.0)
+        pilot.step(obs(t + 3.1))
+        t += 4.0
+    assert pilot.expected_cases(3) is None

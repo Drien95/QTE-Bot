@@ -20,7 +20,11 @@ TURBO_RETRY_DELAY_S = 0.5
 START_TIMEOUT_S = 6.0     # après le clic, la 1re case QTE doit apparaître
 SESSION_END_S = 2.5       # secours : plus aucune case depuis 2.5 s = session terminée (cases espacées de ~0.9 s)
 FAIL_END_S = 1.0          # après une case ratée (le jeu arrête la session), marge courte avant de conclure
-QTE_BY_DIFFICULTY = {1: 4, 2: 6, 3: 8, 4: 10, 5: 12}  # annoncé par le menu du jeu
+# Cases RÉELLEMENT affichées par session. Le menu annonce 12 en Extrême, le jeu en montre 11 (21 sessions
+# mesurées) : on ne se fie pas au menu. Les autres difficultés s'apprennent en jouant (LEARN_AGREEMENT sessions).
+KNOWN_CASES = {5: 11}
+LEARN_AGREEMENT = 2
+LEARN_HISTORY = 5
 RETRY_DELAY_S = 2.0
 MAX_FAILURES = 3
 DIFFICULTY_NAMES = {1: "Facile", 2: "Moyen", 3: "Difficile", 4: "Très difficile", 5: "Extrême"}
@@ -88,8 +92,10 @@ class Autopilot:
     _started_at: float | None = None
     _session_difficulty: int | None = None  # difficulté choisie par NOUS (None = session lancée à la main)
     turbo: bool = False      # ⚡ : pas de pause entre sessions, nouvel essai de E rapide
+    learned: dict[int, list[int]] = field(default_factory=dict)  # difficulté -> cases des sessions propres
     _cases_taken: int = 0
     _failed_at: float | None = None
+    _had_failure: bool = False
 
     def __post_init__(self) -> None:
         self.settings.validate()
@@ -150,7 +156,7 @@ class Autopilot:
         if taken:
             self._cases_taken += 1
         else:
-            self._failed_at = now
+            self._failed_at, self._had_failure = now, True
 
     def _training(self, o: Observation) -> None:
         if o.qte_visible:
@@ -160,6 +166,7 @@ class Autopilot:
         if not self._session_over(o.now):
             return
         self.sessions_done += 1
+        self._learn(self._session_difficulty)
         if self._session_difficulty is not None and self.on_session:
             self.on_session("end", self._session_difficulty, o.now)
         self._session_difficulty = None
@@ -184,8 +191,24 @@ class Autopilot:
         self.click(x + w // 3, y + h // 2)
         self._wait(State.WAIT_START, o.now + START_TIMEOUT_S)
 
+    def expected_cases(self, difficulty: int) -> int | None:
+        """Nombre de cases d'une session : appris (N sessions propres identiques), sinon connu, sinon None."""
+        history = self.learned.get(difficulty, [])
+        recent = history[-LEARN_AGREEMENT:]
+        if len(recent) == LEARN_AGREEMENT and len(set(recent)) == 1:
+            return recent[0]
+        return KNOWN_CASES.get(difficulty)
+
+    def _learn(self, difficulty: int | None) -> None:
+        clean = self._failed_at is None and self._cases_taken > 0 and not self._had_failure
+        if difficulty is None or not clean:
+            return
+        history = self.learned.setdefault(difficulty, [])
+        history.append(self._cases_taken)
+        del history[:-LEARN_HISTORY]
+
     def _session_over(self, now: float) -> bool:
-        expected = QTE_BY_DIFFICULTY.get(self._session_difficulty or 0)
+        expected = self.expected_cases(self._session_difficulty) if self._session_difficulty else None
         if expected is not None and self._cases_taken >= expected:
             return True  # toutes les cases annoncées sont prises : inutile d'attendre
         if self._failed_at is not None and now - self._failed_at >= FAIL_END_S:
@@ -194,7 +217,7 @@ class Autopilot:
 
     def _enter_training(self, now: float, mine: bool) -> None:
         self.state, self._last_qte = State.TRAINING, now
-        self._cases_taken, self._failed_at = 0, None
+        self._cases_taken, self._failed_at, self._had_failure = 0, None, False
         self._session_difficulty = self.last_difficulty if mine else None
         if self._session_difficulty is not None and self.on_session:
             self.on_session("start", self._session_difficulty, now)

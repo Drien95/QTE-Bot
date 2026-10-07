@@ -1,13 +1,12 @@
 """Compteur d'XP de l'entraînement : sessions réussies/ratées par difficulté, XP gagnée, XP par heure.
 
-Hypothèse (non vérifiée côté serveur) : l'XP n'est donnée que si toutes les cases de la session sont prises
-et que leur nombre atteint celui annoncé par le menu.
+Règle : session réussie = au moins une case et AUCUNE case ratée (le jeu arrête la session au 1er échec ;
+le nombre annoncé par le menu est faux : 12 annoncées en Extrême, 11 affichées). XP donnée = hypothèse.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from qte_bot.autopilot import QTE_BY_DIFFICULTY
 
 XP_BY_DIFFICULTY = {1: 15, 2: 25, 3: 40, 4: 60, 5: 85}
 TAKEN = "PRIS"
@@ -52,7 +51,7 @@ class XpTracker:
         if self._difficulty is None:
             return None
         d, self._difficulty = self._difficulty, None
-        success = not self._failed and self._taken >= QTE_BY_DIFFICULTY[d]
+        success = not self._failed and self._taken > 0  # le jeu arrête la session au 1er échec
         stats = self.by_difficulty[d]
         if success:
             stats.ok += 1

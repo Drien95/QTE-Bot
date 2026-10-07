@@ -107,8 +107,9 @@ Tout se règle depuis le menu (enregistrement automatique). Champs avancés, à 
 
 - Écran **principal** en **1080p** : la zone du message « katana » est en coordonnées 1080p.
 - Jeu en fenêtré sans bordure (le HUD ne passe pas au-dessus d'un plein écran exclusif).
-- XP comptée si toutes les cases de la session sont prises et que leur nombre atteint celui du menu
-  (4/6/8/10/12) — déduit des captures, non confirmé côté serveur.
+- XP comptée pour toute session **sans case ratée** (le jeu arrête la session au 1er échec).
+  Le menu annonce 12 QTE en Extrême mais le jeu en affiche **11** (21 sessions mesurées) : le nombre de
+  cases par difficulté est donc **appris en jouant** (2 sessions propres identiques), Extrême connu d'avance.
 - Fin de session = 2,5 s sans case (cases espacées de ~0,9 s observées).
 - Le jeu semble arrêter la session à la première case ratée ; délai min conseillé ≥ 120 ms.
 

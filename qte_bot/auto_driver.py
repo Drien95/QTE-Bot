@@ -31,6 +31,7 @@ class AutoDriver:
         self._katana = False
         self._last_status = ""
         self._turbo = False
+        self._learned: dict[int, list[int]] = {}  # nombre de cases appris, gardé d'une activation à l'autre
 
     # --- pilotage depuis le menu (autre thread) ---
     def configure(self, settings: AutoSettings) -> None:
@@ -49,7 +50,7 @@ class AutoDriver:
     def set_enabled(self, on: bool) -> None:
         with self._lock:
             self._pilot = (Autopilot(self._settings, self._press, self._click, on_session=self._on_session,
-                                     turbo=self._turbo) if on else None)
+                                     turbo=self._turbo, learned=self._learned) if on else None)
         self._emit("AUTOMATISATION ACTIVÉE" if on else "Automatisation désactivée")
 
     @property
