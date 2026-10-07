@@ -234,6 +234,8 @@ class Engine:
                              guess=match.guess if match else None, guess_score=match.score if match else 0.0)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
             io.press_key(key, timing.hold_ms)
+            if self._chain_mode:  # Méditation : détail de chaque appui, pour comprendre le rythme du jeu
+                self.emit(f"  appui '{key.upper()}' (lu {match.guess if match else '?'} {(match.score if match else 0.0):.2f})")
         elif key:
             key = None
         episodes.observe(now, gray, prompt, match, key)
