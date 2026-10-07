@@ -16,7 +16,9 @@ Rect = tuple[int, int, int, int]
 
 MENU_TIMEOUT_S = 2.0      # après E, le menu doit apparaître
 START_TIMEOUT_S = 6.0     # après le clic, la 1re case QTE doit apparaître
-SESSION_END_S = 2.5       # plus aucune case QTE depuis 2.5 s = session terminée (cases espacées de ~0.9 s)
+SESSION_END_S = 2.5       # secours : plus aucune case depuis 2.5 s = session terminée (cases espacées de ~0.9 s)
+FAIL_END_S = 1.0          # après une case ratée (le jeu arrête la session), marge courte avant de conclure
+QTE_BY_DIFFICULTY = {1: 4, 2: 6, 3: 8, 4: 10, 5: 12}  # annoncé par le menu du jeu
 RETRY_DELAY_S = 2.0
 MAX_FAILURES = 3
 DIFFICULTY_NAMES = {1: "Facile", 2: "Moyen", 3: "Difficile", 4: "Très difficile", 5: "Extrême"}
@@ -83,6 +85,8 @@ class Autopilot:
     _in_front: bool = True
     _started_at: float | None = None
     _session_difficulty: int | None = None  # difficulté choisie par NOUS (None = session lancée à la main)
+    _cases_taken: int = 0
+    _failed_at: float | None = None
 
     def __post_init__(self) -> None:
         self.settings.validate()
@@ -136,11 +140,21 @@ class Autopilot:
         elif o.now >= self._deadline:
             self._fail(o.now, "l'entraînement ne démarre pas après le clic")
 
+    def case_done(self, taken: bool, now: float) -> None:
+        """Bilan d'une case (appelé par le moteur) : permet de conclure la session sans attendre."""
+        if self.state is not State.TRAINING:
+            return
+        if taken:
+            self._cases_taken += 1
+        else:
+            self._failed_at = now
+
     def _training(self, o: Observation) -> None:
         if o.qte_visible:
             self._last_qte = o.now
+            self._failed_at = None  # le jeu continue malgré l'échec : on suit
             return
-        if o.now - self._last_qte < SESSION_END_S:
+        if not self._session_over(o.now):
             return
         self.sessions_done += 1
         if self._session_difficulty is not None and self.on_session:
@@ -164,8 +178,17 @@ class Autopilot:
         self.click(x + w // 3, y + h // 2)
         self._wait(State.WAIT_START, o.now + START_TIMEOUT_S)
 
+    def _session_over(self, now: float) -> bool:
+        expected = QTE_BY_DIFFICULTY.get(self._session_difficulty or 0)
+        if expected is not None and self._cases_taken >= expected:
+            return True  # toutes les cases annoncées sont prises : inutile d'attendre
+        if self._failed_at is not None and now - self._failed_at >= FAIL_END_S:
+            return True
+        return now - self._last_qte >= SESSION_END_S
+
     def _enter_training(self, now: float, mine: bool) -> None:
         self.state, self._last_qte = State.TRAINING, now
+        self._cases_taken, self._failed_at = 0, None
         self._session_difficulty = self.last_difficulty if mine else None
         if self._session_difficulty is not None and self.on_session:
             self.on_session("start", self._session_difficulty, now)

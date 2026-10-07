@@ -234,6 +234,7 @@ class Engine:
     def _on_episode(self, s: Summary) -> None:
         verdict = self.stats.record(s)
         self.xp.record_case(verdict)
+        self.auto.case_done(verdict.startswith("PRIS"), time.perf_counter())
         if self.hud is not None:
             self.hud.result(self._screen_rect(s.snapshot.box), s.best.guess, verdict, time.perf_counter())
         if s.pressed:

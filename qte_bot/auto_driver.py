@@ -62,6 +62,12 @@ class AutoDriver:
         with self._lock:
             return self._pilot is not None and self._pilot.state is not State.STOPPED
 
+    def case_done(self, taken: bool, now: float) -> None:
+        with self._lock:
+            pilot = self._pilot
+        if pilot is not None:
+            pilot.case_done(taken, now)
+
     # --- appelé à chaque image par le moteur ---
     def tick(self, bgra: np.ndarray, gray: np.ndarray, origin: tuple[int, int],
              qte_visible: bool, foreground: bool, now: float) -> None:

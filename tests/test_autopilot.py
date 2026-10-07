@@ -182,3 +182,48 @@ def test_manual_session_has_no_callbacks():
     pilot.step(obs(0.0, qte=True))
     pilot.step(obs(5.0))
     assert events == []
+
+
+def start_session(pilot, t, difficulty_rows=None):
+    pilot.step(obs(t))                   # E
+    pilot.step(obs(t + 0.3, menu=True))  # clic
+    pilot.step(obs(t + 0.6, qte=True))   # entraînement
+
+
+def test_session_ends_right_after_last_expected_case():
+    pilot, _ = make(difficulties=(5,), pause=(10, 10))
+    start_session(pilot, 0.0)
+    for i in range(12):                  # Extrême = 12 QTE
+        pilot.case_done(True, 1.0 + i)
+    pilot.step(obs(12.2))                # 0,2 s après la 12e case : pas d'attente de 2,5 s
+    assert pilot.state is State.COOLDOWN and pilot.sessions_done == 1
+
+
+def test_session_not_ended_before_last_case():
+    pilot, _ = make(difficulties=(5,))
+    start_session(pilot, 0.0)
+    for i in range(11):
+        pilot.step(obs(0.9 + i, qte=True))   # cases successives à l'écran
+        pilot.case_done(True, 1.0 + i)
+    pilot.step(obs(11.5))                     # 0,6 s après la 11e : on attend la 12e
+    assert pilot.state is State.TRAINING
+
+
+def test_failed_case_ends_session_after_short_grace():
+    pilot, _ = make(difficulties=(5,), pause=(10, 10))
+    start_session(pilot, 0.0)
+    pilot.step(obs(1.0, qte=True))
+    pilot.case_done(False, 1.2)
+    pilot.step(obs(1.6))
+    assert pilot.state is State.TRAINING          # pas encore : petite marge si le jeu continue
+    pilot.step(obs(2.3))
+    assert pilot.state is State.COOLDOWN
+
+
+def test_new_case_after_failure_keeps_session_alive():
+    pilot, _ = make(difficulties=(5,))
+    start_session(pilot, 0.0)
+    pilot.case_done(False, 1.0)
+    pilot.step(obs(1.5, qte=True))               # le jeu a continué malgré l'échec
+    pilot.step(obs(2.2, qte=True))
+    assert pilot.state is State.TRAINING

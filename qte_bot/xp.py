@@ -7,8 +7,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from qte_bot.autopilot import QTE_BY_DIFFICULTY
+
 XP_BY_DIFFICULTY = {1: 15, 2: 25, 3: 40, 4: 60, 5: 85}
-QTE_BY_DIFFICULTY = {1: 4, 2: 6, 3: 8, 4: 10, 5: 12}
 TAKEN = "PRIS"
 
 

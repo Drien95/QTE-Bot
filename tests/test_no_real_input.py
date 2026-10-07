@@ -29,16 +29,19 @@ def test_engine_without_io_refuses_to_run(cfg):
 
 
 class FakeScreen:
-    """Écran simulé : la capture plein écran avec la case « E », puis un écran vide."""
+    """Écran simulé : la capture plein écran avec la case « E » pendant `seconds` (temps réel), puis vide."""
 
-    def __init__(self, frames_with_box: int):
-        box = cv2.cvtColor(cv2.imread(str(FIX / "full_E.png")), cv2.COLOR_BGR2BGRA)
-        self.frames = [box] * frames_with_box
-        self.empty = np.zeros_like(box)
-        self.region = {"left": 0, "top": 0, "width": box.shape[1], "height": box.shape[0]}
+    def __init__(self, seconds: float):
+        self.box = cv2.cvtColor(cv2.imread(str(FIX / "full_E.png")), cv2.COLOR_BGR2BGRA)
+        self.empty = np.zeros_like(self.box)
+        self.until = None
+        self.seconds = seconds
+        self.region = {"left": 0, "top": 0, "width": self.box.shape[1], "height": self.box.shape[0]}
 
     def grab_bgra(self):
-        return self.frames.pop(0) if self.frames else self.empty
+        now = time.perf_counter()
+        self.until = self.until or now + self.seconds  # la case apparaît à la 1re capture
+        return self.box if now < self.until else self.empty
 
 
 class NoHotkeys:
@@ -50,7 +53,7 @@ class NoHotkeys:
 
 
 def fake_io(presses, foreground="gmod.exe"):
-    return GameIo(make_grabber=lambda _roi: FakeScreen(frames_with_box=40), make_hotkeys=NoHotkeys,
+    return GameIo(make_grabber=lambda _roi: FakeScreen(seconds=1.2), make_hotkeys=NoHotkeys,
                   press_key=lambda key, ms: presses.append(key), click_at=lambda x, y: presses.append(("click", x, y)),
                   foreground_process=lambda: foreground)
 
