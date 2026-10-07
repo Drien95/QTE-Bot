@@ -170,3 +170,17 @@ def test_box_really_gone_still_rearms():
     seq = [("w", True), (None, False), (None, False), ("w", True)]
     out = [tracker.update(label, i * FRAME, visible=vis) for i, (label, vis) in enumerate(seq)]
     assert out == ["w", None, None, "w"]
+
+
+def test_turbo_spams_from_first_frame_until_box_leaves():
+    tracker = PressTracker(1, 3, rng=random.Random(0), insist_every_ms=50, max_presses=10)
+    tracker.set_delay(0, 0)
+    out = feed(tracker, ["w"] * 10)                      # 10 images de 30 ms
+    times = [round(i * FRAME, 2) for i, k in enumerate(out) if k]
+    assert times[0] == 0.0 and len(times) >= 5           # tout de suite, puis toutes les ~50 ms
+
+
+def test_turbo_spam_is_capped():
+    tracker = PressTracker(1, 3, rng=random.Random(0), insist_every_ms=50, max_presses=10)
+    out = feed(tracker, ["w"] * 200)
+    assert out.count("w") == 10

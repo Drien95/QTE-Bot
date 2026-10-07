@@ -13,12 +13,13 @@ FALLBACK_MIN_SCORE = 0.35    # en dessous, ce n'est plus une lettre plausible
 
 class PressTracker:
     def __init__(self, confirm_frames: int, release_frames: int, rng: random.Random | None = None,
-                 insist_every_ms: int | None = None):
+                 insist_every_ms: int | None = None, max_presses: int = MAX_PRESSES):
         """`insist_every_ms` : tant que la case reste après un appui, réappuyer à ce rythme (MAX_PRESSES au total),
         et tenter la meilleure supposition si la lettre n'est jamais lue avec certitude. None = un seul appui sûr."""
         self._confirm = confirm_frames
         self._release = release_frames
         self._insist = None if insist_every_ms is None else insist_every_ms / 1000
+        self._max_presses = max_presses
         self._rng = rng or random.Random()
         self._delay_ms = (0, 0)
         self._reset()
@@ -84,7 +85,7 @@ class PressTracker:
 
     def _insist_again(self, now: float) -> str | None:
         """Case toujours affichée après l'appui = pas prise : on réappuie, à rythme régulier, plafonné."""
-        if self._insist is None or self._presses >= MAX_PRESSES or now - self._pressed_at < self._insist - 1e-9:
+        if self._insist is None or self._presses >= self._max_presses or now - self._pressed_at < self._insist - 1e-9:
             return None
         self._pressed_at, self._presses = now, self._presses + 1
         return self._pressed

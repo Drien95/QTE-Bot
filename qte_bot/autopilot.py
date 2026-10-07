@@ -15,6 +15,8 @@ from typing import Callable
 Rect = tuple[int, int, int, int]
 
 MENU_TIMEOUT_S = 2.0      # après E, le menu doit apparaître
+TURBO_MENU_TIMEOUT_S = 0.7
+TURBO_RETRY_DELAY_S = 0.5
 START_TIMEOUT_S = 6.0     # après le clic, la 1re case QTE doit apparaître
 SESSION_END_S = 2.5       # secours : plus aucune case depuis 2.5 s = session terminée (cases espacées de ~0.9 s)
 FAIL_END_S = 1.0          # après une case ratée (le jeu arrête la session), marge courte avant de conclure
@@ -85,6 +87,7 @@ class Autopilot:
     _in_front: bool = True
     _started_at: float | None = None
     _session_difficulty: int | None = None  # difficulté choisie par NOUS (None = session lancée à la main)
+    turbo: bool = False      # ⚡ : pas de pause entre sessions, nouvel essai de E rapide
     _cases_taken: int = 0
     _failed_at: float | None = None
 
@@ -125,7 +128,7 @@ class Autopilot:
             return self._choose(o)
         if o.now >= self._next_action:
             self.press(self.settings.interact_key)
-            self._wait(State.WAIT_MENU, o.now + MENU_TIMEOUT_S)
+            self._wait(State.WAIT_MENU, o.now + (TURBO_MENU_TIMEOUT_S if self.turbo else MENU_TIMEOUT_S))
 
     def _wait_menu(self, o: Observation) -> None:
         if o.menu_rows:
@@ -164,7 +167,10 @@ class Autopilot:
             return self._stop(f"limite de {self.settings.max_sessions} sessions atteinte")
         if self._time_is_up(o.now):
             return self._stop(f"durée max de {self.settings.max_minutes} min atteinte")
-        pause = self.rng.randint(self.settings.pause_min_s, self.settings.pause_max_s)  # secondes entières
+        pause = 0 if self.turbo else self.rng.randint(self.settings.pause_min_s, self.settings.pause_max_s)
+        if pause == 0:  # pas de pause : on relance dès l'image suivante
+            self.state, self._next_action = State.IDLE, o.now
+            return
         self._wait(State.COOLDOWN, o.now + pause)
 
     def _cooldown(self, o: Observation) -> None:
@@ -204,7 +210,7 @@ class Autopilot:
         self.failures += 1
         if self.failures >= MAX_FAILURES:
             return self._stop(reason)
-        self.state, self._next_action = State.IDLE, now + RETRY_DELAY_S
+        self.state, self._next_action = State.IDLE, now + (TURBO_RETRY_DELAY_S if self.turbo else RETRY_DELAY_S)
 
     def _stop(self, reason: str) -> None:
         self.state, self.reason = State.STOPPED, reason

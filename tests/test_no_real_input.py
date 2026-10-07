@@ -143,3 +143,11 @@ def test_unchanged_screen_reuses_last_analysis(cfg, monkeypatch):
     run_briefly(Engine(cfg, build_recognizer(cfg), Path(tempfile.mkdtemp()), emit=lambda _l: None, io=io))
     assert presses and presses[0] == "e"   # la case est toujours « là » : l'appui part au délai prévu
     assert len(detections) == 1           # une seule analyse pour une seule image neuve
+
+
+def test_turbo_hammers_until_cap(cfg):
+    presses = []
+    engine = Engine(cfg, build_recognizer(cfg), Path(tempfile.mkdtemp()), emit=lambda _l: None, io=fake_io(presses))
+    engine.set_turbo(True)
+    run_briefly(engine)                         # case visible 1,2 s, jamais « prise » (écran simulé)
+    assert presses.count("e") == 10            # bourrine au plafond, pas au-delà

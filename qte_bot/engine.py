@@ -28,7 +28,9 @@ MAX_UNSURE_GLYPHS = 200  # lettres douteuses gardées pour apprendre des variant
 OPENCV_THREADS = 1       # mesuré : 1 thread = 60 % d'un cœur, multi-thread = 141 % pour la même cadence
 CALM_AFTER_S = 2.0        # aucune case depuis 2 s : on analyse moins souvent…
 CALM_PERIOD_S = 1 / 30    # …30 images/s (au pire +16 ms pour voir la 1re case, fenêtre de 500 ms)
-UI_KEY_HOLD_MS = 150   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
+UI_KEY_HOLD_MS = 150
+# ⚡ Turbo : tout au minimum. Appui dès la 1re image lue, puis toutes les 50 ms tant que la case reste (10 max).
+TURBO_INSIST_MS, TURBO_MAX_PRESSES, TURBO_E_HOLD_MS = 50, 10, 100   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
 
 Emit = Callable[[str], None]
 
@@ -86,6 +88,7 @@ class Engine:
         self._last_box_at = float("-inf")
         self._last_analysis_at = float("-inf")
         self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe, self._on_session)
+        self.auto.set_turbo(self.cfg.turbo)
         self.xp = XpTracker()
         self._repress = self.cfg.repress
         self._turbo = self.cfg.turbo
@@ -103,7 +106,13 @@ class Engine:
 
     def set_turbo(self, on: bool) -> None:
         with self._lock:
-            self._turbo = on
+            self._turbo, self._rebuild = on, True
+        self.auto.set_turbo(on)
+
+    @property
+    def turbo(self) -> bool:
+        with self._lock:
+            return self._turbo
 
     def set_hotkeys(self, codes: dict[str, int]) -> None:
         with self._lock:
@@ -143,8 +152,9 @@ class Engine:
 
     def _auto_press(self, key: str) -> None:
         """Touche d'interaction (E) : maintenue comme un humain, l'action « utiliser » passe par le serveur."""
-        self._require_io().press_key(key, UI_KEY_HOLD_MS)
-        self.emit(f"auto : touche '{key.upper()}' envoyée ({UI_KEY_HOLD_MS} ms)")
+        hold = TURBO_E_HOLD_MS if self.turbo else UI_KEY_HOLD_MS
+        self._require_io().press_key(key, hold)
+        self.emit(f"auto : touche '{key.upper()}' envoyée ({hold} ms)")
 
     def _auto_click(self, x: int, y: int) -> None:
         with self._lock:
@@ -167,20 +177,23 @@ class Engine:
             with self._lock:
                 enabled, timing, rebuild = self._enabled, self._timing, self._rebuild
                 self._rebuild = False
-                repress, codes = self._repress, self._hotkey_codes
+                repress, codes, turbo = self._repress, self._hotkey_codes, self._turbo
             if rebuild:  # réglage changé depuis le menu : on repart d'un état propre
-                tracker = self._new_tracker(repress)
+                tracker = self._new_tracker(repress, turbo)
                 hotkeys = io.make_hotkeys(codes)
             if self._handle_hotkeys(hotkeys.poll()):
-                tracker = self._new_tracker(repress)
+                tracker = self._new_tracker(repress, turbo)
             if not enabled:  # en pause : ni capture ni CPU consommé
                 time.sleep(0.05)
                 continue
-            tracker.set_delay(timing.delay_min_ms, timing.delay_max_ms)
+            tracker.set_delay(*((0, 0) if turbo else (timing.delay_min_ms, timing.delay_max_ms)))
             self._step(grabber, tracker, episodes, timing, io)
             time.sleep(max(0.0, period - (time.perf_counter() - start)))
 
-    def _new_tracker(self, repress: bool) -> PressTracker:
+    def _new_tracker(self, repress: bool, turbo: bool) -> PressTracker:
+        if turbo:  # confirmation sur 1 image (lecture fiable à ~1.00), insistance serrée
+            return PressTracker(1, self.cfg.release_frames, insist_every_ms=TURBO_INSIST_MS,
+                                max_presses=TURBO_MAX_PRESSES)
         return PressTracker(self.cfg.confirm_frames, self.cfg.release_frames,
                             insist_every_ms=INSIST_EVERY_MS if repress else None)
 

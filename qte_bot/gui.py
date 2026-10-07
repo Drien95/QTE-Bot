@@ -39,7 +39,6 @@ class App:
         a = cfg.auto
         self.delay_min, self.delay_max = tk.IntVar(value=cfg.delay_min_ms), tk.IntVar(value=cfg.delay_max_ms)
         self.hold, self.repress = tk.IntVar(value=cfg.hold_ms), tk.BooleanVar(value=cfg.repress)
-        self.turbo = tk.BooleanVar(value=cfg.turbo)
         self.levels = {d: tk.BooleanVar(value=d in a.difficulties) for d in DIFFICULTY_NAMES}
         self.pause_min, self.pause_max = tk.IntVar(value=a.pause_min_s), tk.IntVar(value=a.pause_max_s)
         self.max_sessions, self.max_minutes = tk.IntVar(value=a.max_sessions), tk.IntVar(value=a.max_minutes)
@@ -82,8 +81,10 @@ class App:
         row.pack(fill="x", pady=(0, 10))
         self.qte_tile = w.Tile(row, "QTE", self._toggle_qte)
         self.auto_tile = w.Tile(row, "AUTOMATIQUE", self._toggle_auto)
+        self.turbo_tile = w.Tile(row, "⚡ TURBO", self._toggle_turbo)
         self.qte_tile.pack(side="left", fill="x", expand=True, padx=(0, 5))
-        self.auto_tile.pack(side="left", fill="x", expand=True, padx=(5, 0))
+        self.auto_tile.pack(side="left", fill="x", expand=True, padx=5)
+        self.turbo_tile.pack(side="left", fill="x", expand=True, padx=(5, 0))
         self.auto_state = w.label(parent, "", muted=True)
         self.auto_state.configure(bg=t.BG)
         self.auto_state.pack(anchor="w", pady=(0, 8))
@@ -112,8 +113,6 @@ class App:
         self._field(grid, 0, "Pause entre sessions (secondes)", (self.pause_min, self.pause_max), 0, 3600, 1, "auto")
         self._field(grid, 1, "Arrêt après … sessions", (self.max_sessions,), 1, 10000, 1, "auto")
         self._field(grid, 2, "Arrêt après … minutes (0 = jamais)", (self.max_minutes,), 0, 1440, 5, "auto")
-        w.check(box, "⚡ Turbo : clic plus vif sur la difficulté", self.turbo,
-                lambda: self._changed("auto")).pack(anchor="w", pady=(8, 0))
 
     def _qte_card(self, parent: tk.Frame) -> None:
         box = w.card(parent, "QTE")
@@ -187,8 +186,6 @@ class App:
         settings = self._auto_settings(interact_key)
         save_auto(self.config_path, settings)  # refuse aussi un conflit avec un raccourci
         self.engine.auto.configure(settings)
-        self.engine.set_turbo(self.turbo.get())
-        save_turbo(self.config_path, self.turbo.get())
         self.interact_key = settings.interact_key
 
     # ---------- raccourcis ----------
@@ -237,6 +234,16 @@ class App:
                 return self._say(f"⚠ {exc}", t.RED)
         self.engine.auto.toggle()
 
+    def _toggle_turbo(self) -> None:
+        on = not self.engine.turbo
+        self.engine.set_turbo(on)
+        try:
+            save_turbo(self.config_path, on)
+        except ValueError as exc:
+            return self._say(f"⚠ {exc}", t.RED)
+        self._say("⚡ Turbo : tout au minimum (appui immédiat + insistance, aucune pause)" if on
+                  else "Turbo désactivé : tes réglages de délai et de pause s'appliquent", t.AMBER if on else t.MUTED)
+
     def _toggle_hud(self) -> None:
         if self.overlay is not None:
             self.overlay.set_visible(self.hud_on.get())
@@ -259,6 +266,8 @@ class App:
         qte_on, auto_on = self.engine.enabled, self.engine.auto.enabled
         self.qte_tile.show(qte_on, "actifs" if qte_on else "en pause", key_label(names["toggle"]))
         self.auto_tile.show(auto_on, "en marche" if auto_on else "arrêtée", key_label(names["auto"]), t.CYAN)
+        turbo_on = self.engine.turbo
+        self.turbo_tile.show(turbo_on, "tout au minimum" if turbo_on else "désactivé", "", t.AMBER)
         self.auto_state.config(text=f"Automatisation : {self.engine.auto.status}")
         self._refresh_stats()
 
@@ -275,7 +284,8 @@ class App:
 
     def hud_status(self) -> str:
         xp, timing = self.engine.xp, self.engine.timing
-        return (f"◢ QTE·BOT  {'ACTIF' if self.engine.enabled else 'PAUSE'}\n"
+        turbo = "  ⚡TURBO" if self.engine.turbo else ""
+        return (f"◢ QTE·BOT  {'ACTIF' if self.engine.enabled else 'PAUSE'}{turbo}\n"
                 f"  délai {timing.delay_min_ms}–{timing.delay_max_ms} ms\n"
                 f"  XP {xp.total_xp} · {xp.xp_per_hour(time.perf_counter()):.0f}/h\n"
                 f"  auto : {self.engine.auto.status}")

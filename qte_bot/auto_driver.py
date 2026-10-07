@@ -30,6 +30,7 @@ class AutoDriver:
         self._rows: list[tuple[int, int, int, int]] = []
         self._katana = False
         self._last_status = ""
+        self._turbo = False
 
     # --- pilotage depuis le menu (autre thread) ---
     def configure(self, settings: AutoSettings) -> None:
@@ -39,9 +40,16 @@ class AutoDriver:
             if self._pilot is not None:  # appliqué à chaud, compteur de sessions conservé
                 self._pilot.settings = settings
 
+    def set_turbo(self, on: bool) -> None:
+        with self._lock:
+            self._turbo = on
+            if self._pilot is not None:
+                self._pilot.turbo = on
+
     def set_enabled(self, on: bool) -> None:
         with self._lock:
-            self._pilot = Autopilot(self._settings, self._press, self._click, on_session=self._on_session) if on else None
+            self._pilot = (Autopilot(self._settings, self._press, self._click, on_session=self._on_session,
+                                     turbo=self._turbo) if on else None)
         self._emit("AUTOMATISATION ACTIVÉE" if on else "Automatisation désactivée")
 
     @property
@@ -78,7 +86,7 @@ class AutoDriver:
             return
         if pilot.state not in SCAN_STATES:
             self._rows, self._katana = [], False
-        elif now - self._last_scan >= UI_SCAN_PERIOD_S:
+        elif now - self._last_scan >= (0.0 if self._turbo else UI_SCAN_PERIOD_S):  # turbo : à chaque image
             self._last_scan = now
             self._rows = [(x + origin[0], y + origin[1], w, h)
                           for x, y, w, h in find_difficulty_rows(cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR))]

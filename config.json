@@ -34,5 +34,6 @@
     "capture": "F9",
     "quit": "F10"
   },
-  "repress": true
+  "repress": true,
+  "turbo": false
 }

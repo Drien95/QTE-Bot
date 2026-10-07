@@ -227,3 +227,23 @@ def test_new_case_after_failure_keeps_session_alive():
     pilot.step(obs(1.5, qte=True))               # le jeu a continué malgré l'échec
     pilot.step(obs(2.2, qte=True))
     assert pilot.state is State.TRAINING
+
+
+def test_turbo_skips_pause_between_sessions():
+    pilot, fake = make(difficulties=(5,), pause=(10, 10))
+    pilot.turbo = True
+    start_session(pilot, 0.0)
+    for i in range(12):
+        pilot.case_done(True, 1.0 + i)
+    pilot.step(obs(12.1))              # fin de session
+    pilot.step(obs(12.2))              # pas de pause : on relance tout de suite
+    assert fake.actions[-1] == ("press", "e")
+
+
+def test_turbo_retries_e_quickly():
+    pilot, fake = make()
+    pilot.turbo = True
+    pilot.step(obs(0.0))               # E
+    pilot.step(obs(0.8))               # menu absent après 0,7 s -> échec 1
+    pilot.step(obs(1.4))               # nouvel essai 0,5 s plus tard
+    assert fake.actions.count(("press", "e")) == 2

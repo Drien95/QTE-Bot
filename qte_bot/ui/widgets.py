@@ -41,7 +41,7 @@ class Tile(tk.Frame):
         for w in (self, self.title, self.sub):
             w.config(bg=bg)
         self.title.config(fg=fg)
-        self.sub.config(fg=fg, text=f"{text}   ·   touche {key}")
+        self.sub.config(fg=fg, text=f"{text}   ·   touche {key}" if key else text)
 
 
 class Stat(tk.Frame):
