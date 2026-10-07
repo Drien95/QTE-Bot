@@ -17,6 +17,7 @@ MIN_GLYPH_PIXELS = 12
 MAX_GLYPH_FRACTION = 0.2  # une lettre n'occupe qu'une petite part du centre
 MAX_CANDIDATES = 64      # borne dure : une frame bruitée ne doit pas faire exploser le coût
 _SEAL = np.ones((3, 3), np.uint8)
+SEARCH_STEP = 2          # recherche des zones sur un masque réduit de moitié (le trait épaissi à 3 px y survit)
 
 
 @dataclass(frozen=True)
@@ -48,21 +49,20 @@ def find_prompt(gray: np.ndarray, min_side: int, max_side: int) -> Prompt | None
 def _candidate_boxes(gray: np.ndarray, min_side: int, max_side: int) -> list[Box]:
     """Zones sombres entièrement fermées par un trait clair, carrées et bien remplies.
 
-    Le trait de la case ne fait qu'1 px avec des coins arrondis : on l'épaissit d'1 px pour boucher
-    les trous d'anticrénelage, puis chaque zone sombre isolée par ce trait devient une composante.
+    Le trait de la case ne fait qu'1 px avec des coins arrondis : on l'épaissit à 3 px (bouche les trous
+    d'anticrénelage), ce qui permet ensuite de chercher les zones sur un masque réduit de moitié sans jamais
+    couper le trait (1 pixel sur 2 d'un trait de 3 px est toujours clair). Coût ÷ 4 sur la partie la plus chère.
     """
-    bright = cv2.dilate((gray > BORDER_THRESHOLD).astype(np.uint8), _SEAL)
-    _, _, stats, _ = cv2.connectedComponentsWithStats(1 - bright, connectivity=4)
-    boxes = []
-    for x, y, w, h, area in stats[1:]:
-        if not (min_side <= w <= max_side and min_side <= h <= max_side):
-            continue
-        if abs(w - h) > MAX_ASPECT_DEVIATION * max(w, h) or area < MIN_FILL * w * h:
-            continue
-        boxes.append(Box(int(x), int(y), int(w), int(h)))
-        if len(boxes) >= MAX_CANDIDATES:
-            break
-    return boxes
+    _, bright = cv2.threshold(gray, BORDER_THRESHOLD, 1, cv2.THRESH_BINARY)
+    bright = cv2.dilate(bright, _SEAL)
+    small = bright[::SEARCH_STEP, ::SEARCH_STEP]
+    _, _, stats, _ = cv2.connectedComponentsWithStats(1 - small, connectivity=4)
+    x, y, w, h, area = (stats[1:, i].astype(np.int64) for i in range(5))
+    w_full, h_full = w * SEARCH_STEP, h * SEARCH_STEP
+    keep = ((w_full >= min_side) & (w_full <= max_side) & (h_full >= min_side) & (h_full <= max_side)
+            & (np.abs(w - h) <= MAX_ASPECT_DEVIATION * np.maximum(w, h)) & (area >= MIN_FILL * w * h))
+    idx = np.flatnonzero(keep)[:MAX_CANDIDATES]
+    return [Box(int(x[i]) * SEARCH_STEP, int(y[i]) * SEARCH_STEP, int(w_full[i]), int(h_full[i])) for i in idx]
 
 
 def _extract_glyph(gray: np.ndarray, box: Box) -> np.ndarray | None:
