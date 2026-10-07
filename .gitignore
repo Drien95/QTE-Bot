@@ -1,0 +1,15 @@
+# Environnement et caches
+.venv/
+__pycache__/
+.pytest_cache/
+*.tmp
+
+# Données produites à l'exécution (locales à chaque joueur)
+captures/
+qte_bot.log
+qte_bot.old.log
+
+# Build de l'exécutable
+build/
+dist/
+*.spec
