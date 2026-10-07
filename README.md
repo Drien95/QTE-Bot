@@ -80,9 +80,18 @@ La capture de **sous-région** de `dxcam` fait planter Python : on capture toujo
 
 ## Combat et Méditation
 
-Même exercice, même menu, mêmes difficultés et même XP aux mêmes emplacements : le bot fait les deux sans
-réglage. Seule différence : le Combat exige le katana en main (sinon le jeu affiche un message et le bot
-s'arrête). L'activité est lue sur le titre du menu (« ENTRAINEMENT COMBAT » ou non) et affichée sur le HUD.
+Même menu et même procédé (E, difficulté, QTE), mais **pas le même exercice** :
+
+| | Combat | Méditation |
+|---|---|---|
+| Cases | une case = une touche, puis elle disparaît | une seule case, les touches s'y **enchaînent** sans pause |
+| Insistance | réappui rapide (50 ms en Turbo) si la case reste | **jamais rapide** : même lettre réappuyée seulement 250 ms après |
+| Épée | katana en main obligatoire | non |
+
+En Méditation, un réappui rapide taperait l'ancienne lettre sur la case suivante (la capture a 1-2 images
+de retard) : c'est ce qui faisait échouer. Le mode « enchaînement » (`chain.py`) s'active par le titre du
+menu (automatisation) ou dès que la lettre change sans que la case disparaisse ; il reste actif d'une session
+à l'autre et ne revient au Combat que sur une signature de Combat (case disparue puis nouvelle case < 2 s).
 
 ## Sécurités
 

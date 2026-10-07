@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 
 from qte_bot.auto_driver import AutoDriver
+from qte_bot.chain import ChainDetector, ChainTracker
 from qte_bot.config import Config
 from qte_bot.detector import find_prompt
 from qte_bot.episodes import EpisodeLog, Summary
@@ -42,6 +43,14 @@ class Stats:
     ignored: int = 0   # appui envoyé mais la case est restée
     missed: int = 0    # case vue, pas d'appui (lettre douteuse ou disparue avant le délai)
     rescued: int = 0   # prises grâce au 2e appui
+    chained: int = 0   # touches envoyées en Méditation (enchaînement)
+
+    def record_chain(self, presses: int) -> str:
+        """Méditation : la case ne disparaît jamais, on compte les touches envoyées."""
+        self.cases += presses
+        self.taken += presses
+        self.chained += presses
+        return "MÉDITATION"
 
     def record(self, s: Summary) -> str:
         self.cases += 1
@@ -85,6 +94,9 @@ class Engine:
         self._origin = (0, 0)  # coin haut-gauche de la zone capturée, en coordonnées écran
         self._foreground_warned = False
         self._analysis = None  # (bgra, gris, case, lecture) de la dernière image neuve
+        self._chain = ChainDetector()
+        self._chain_mode = False  # Méditation : touches enchaînées dans une case qui ne disparaît pas
+        self._tracker = None
         self._last_box_at = float("-inf")
         self._last_analysis_at = float("-inf")
         self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe, self._on_session)
@@ -170,7 +182,7 @@ class Engine:
         self._origin = (grabber.region["left"], grabber.region["top"])
         episodes = EpisodeLog(self.cfg.release_frames, self._on_episode)
         period = 1.0 / self.cfg.fps
-        tracker = hotkeys = None
+        hotkeys = None
         self.emit(f"prêt : tout l'écran principal surveillé · capture {getattr(grabber, 'kind', '?')}")
         while not self._stop.is_set():
             start = time.perf_counter()
@@ -179,15 +191,14 @@ class Engine:
                 self._rebuild = False
                 repress, codes, turbo = self._repress, self._hotkey_codes, self._turbo
             if rebuild:  # réglage changé depuis le menu : on repart d'un état propre
-                tracker = self._new_tracker(repress, turbo)
+                self._tracker, self._chain_mode = self._new_tracker(repress, turbo), False
                 hotkeys = io.make_hotkeys(codes)
             if self._handle_hotkeys(hotkeys.poll()):
-                tracker = self._new_tracker(repress, turbo)
+                self._tracker, self._chain_mode = self._new_tracker(repress, turbo), False
             if not enabled:  # en pause : ni capture ni CPU consommé
                 time.sleep(0.05)
                 continue
-            tracker.set_delay(*((0, 0) if turbo else (timing.delay_min_ms, timing.delay_max_ms)))
-            self._step(grabber, tracker, episodes, timing, io)
+            self._step(grabber, episodes, timing, io, repress, turbo)
             time.sleep(max(0.0, period - (time.perf_counter() - start)))
 
     def _new_tracker(self, repress: bool, turbo: bool) -> PressTracker:
@@ -202,7 +213,7 @@ class Engine:
             raise RuntimeError("Engine sans io : passe io=io_win.real_io() (menu) ou un faux (tests)")
         return self.io
 
-    def _step(self, grabber, tracker: PressTracker, episodes: EpisodeLog, timing: Timing, io: GameIo) -> None:
+    def _step(self, grabber, episodes: EpisodeLog, timing: Timing, io: GameIo, repress: bool, turbo: bool) -> None:
         now = time.perf_counter()
         bgra = grabber.grab_bgra() if self._time_to_analyse(now) else None
         if bgra is not None or self._analysis is None:  # écran inchangé : on réutilise la dernière analyse
@@ -215,6 +226,10 @@ class Engine:
         if prompt is not None:
             self._last_box_at = now
         foreground = self._game_in_front(io.foreground_process())
+        self._chain.update(prompt is not None, match.label if match else None, now)
+        self._switch_mode(self._chain.chain or self.auto.meditation, repress, turbo, now)
+        tracker = self._tracker
+        tracker.set_delay(*((0, 0) if turbo else (timing.delay_min_ms, timing.delay_max_ms)))
         key = tracker.update(match.label if match else None, now, visible=prompt is not None,
                              guess=match.guess if match else None, guess_score=match.score if match else 0.0)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
@@ -226,6 +241,18 @@ class Engine:
         self.auto.tick(bgra, gray, self._origin, prompt is not None, foreground, now)
         if self.hud is not None:
             self._publish(prompt, match, key, tracker, now)
+
+    def _switch_mode(self, chain: bool, repress: bool, turbo: bool, now: float) -> None:
+        """Combat (une case = une touche) <-> Méditation (enchaînement) ; reprise sans renvoyer la dernière touche."""
+        if chain == self._chain_mode:
+            return
+        if chain:
+            new = ChainTracker(self.cfg.release_frames)
+            new.seed(self._tracker.pressed if self._tracker else None, now)
+            self.emit("mode Méditation : touches enchaînées (pas d'insistance rapide)")
+        else:
+            new = self._new_tracker(repress, turbo)
+        self._tracker, self._chain_mode = new, chain
 
     def _publish(self, prompt, match, key: str | None, tracker: PressTracker, now: float) -> None:
         if prompt is None:
@@ -273,6 +300,8 @@ class Engine:
 
     # --- bilan par case ---
     def _on_episode(self, s: Summary) -> None:
+        if self._chain_mode:
+            return self._on_chain_episode(s)
         verdict = self.stats.record(s)
         self.xp.record_case(verdict)
         self.auto.case_done(verdict.startswith("PRIS"), time.perf_counter())
@@ -290,6 +319,18 @@ class Engine:
         if self.cfg.save_captures and self._saved < MAX_AUTO_SAVES:  # diagnostic seulement
             self._save_scene(s, verdict)
             self._saved += 1
+
+    def _on_chain_episode(self, s: Summary) -> None:
+        """Méditation : un « épisode » = tout l'enchaînement. Pas de verdict IGNORÉ (la case reste toujours
+        affichée), pas d'échec signalé à l'automate : la fin de session se fait au calme (2,5 s sans case)."""
+        verdict = self.stats.record_chain(s.presses)
+        if s.presses:
+            self.xp.record_case("PRIS")
+        if self.hud is not None:
+            self.hud.result(self._screen_rect(s.snapshot.box), s.best.guess, verdict, time.perf_counter())
+        line = f"{time.strftime('%H:%M:%S')} MÉDITATION  {s.presses} touches envoyées, case visible {s.visible_ms} ms"
+        self.emit(line)
+        self._journal(line)
 
     def _keep_unsure_glyph(self, mask: np.ndarray, match) -> None:
         """Lettre que le bot n'a pas su lire : gardée (minuscule) pour en faire un modèle si c'est une variante."""

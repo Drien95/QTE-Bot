@@ -135,7 +135,12 @@ class Autopilot:
         if self.state is not State.TRAINING or self._session_difficulty is None:
             return None
         d, a = self._session_difficulty, self._activity
-        return self._cases_taken, self.expected_cases(d), f"{ACTIVITY_NAMES.get(a, a)} · {DIFFICULTY_NAMES[d]}"
+        expected = None if a == "méditation" else self.expected_cases(d)  # Méditation : nombre inconnu
+        return self._cases_taken, expected, f"{ACTIVITY_NAMES.get(a, a)} · {DIFFICULTY_NAMES[d]}"
+
+    @property
+    def activity(self) -> str:
+        return self._activity
 
     @property
     def short_state(self) -> str:

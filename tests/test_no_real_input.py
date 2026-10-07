@@ -151,3 +151,74 @@ def test_turbo_hammers_until_cap(cfg):
     engine.set_turbo(True)
     run_briefly(engine)                         # case visible 1,2 s, jamais « prise » (écran simulé)
     assert presses.count("e") == 10            # bourrine au plafond, pas au-delà
+
+
+class MeditationScreen:
+    """Case qui ne disparaît pas ; la lettre change sans pause (vraies lettres du jeu collées dans la case)."""
+
+    BOX = (524, 472, 76, 76)  # case de full_E.png
+
+    def __init__(self, schedule):
+        base = cv2.imread(str(FIX / "full_E.png"))
+        self.frames = []
+        for letter, seconds in schedule:
+            img = base.copy()
+            x, y, w, h = self.BOX
+            img[y + 12: y + h - 12, x + 12: x + w - 12] = 0               # efface le « E »
+            mask = cv2.imread(str(Path(__file__).resolve().parent.parent / "templates" / f"{letter}_1.png"), 0)
+            if mask is None:
+                mask = cv2.imread(str(Path(__file__).resolve().parent.parent / "templates" / f"{letter}_2.png"), 0)
+            my, mx = y + (h - mask.shape[0]) // 2, x + (w - mask.shape[1]) // 2
+            img[my: my + mask.shape[0], mx: mx + mask.shape[1]][mask > 127] = 255
+            self.frames.append((cv2.cvtColor(img, cv2.COLOR_BGR2BGRA), seconds))
+        self.empty = np.zeros_like(self.frames[0][0])
+        self.start = None
+        self.region = {"left": 0, "top": 0, "width": base.shape[1], "height": base.shape[0]}
+        self.kind = "simulée"
+
+    def grab_bgra(self):
+        now = time.perf_counter()
+        self.start = self.start or now
+        t = now - self.start
+        for frame, seconds in self.frames:
+            if t < seconds:
+                return frame
+            t -= seconds
+        return self.empty
+
+
+def run_meditation(cfg, monkeypatch, title_says_meditation):
+    schedule = [("a", 0.4), ("z", 0.6), ("e", 0.4)]      # « z » affiché 0,6 s : lettre répétée
+    screen = MeditationScreen(schedule)
+    presses = []
+    io = GameIo(make_grabber=lambda _roi: screen, make_hotkeys=NoHotkeys,
+                press_key=lambda key, ms: presses.append((key, time.perf_counter())),
+                click_at=lambda x, y, fast: None, foreground_process=lambda: "gmod.exe")
+    engine = Engine(cfg, build_recognizer(cfg), Path(tempfile.mkdtemp()), emit=lambda _l: None, io=io)
+    engine.set_turbo(True)                                # le cas qui échouait : Turbo + Méditation
+    if title_says_meditation:                             # automatisation : titre du menu lu avant la session
+        monkeypatch.setattr(type(engine.auto), "meditation", property(lambda self: True))
+    run_briefly(engine, seconds=2.0)
+    return presses
+
+
+def assert_chain_rules(presses):
+    for (k1, t1), (k2, t2) in zip(presses, presses[1:]):
+        assert t2 - t1 >= 0.07, f"rafale {k1}->{k2} en {(t2 - t1) * 1000:.0f} ms"
+        if k1 == k2:
+            assert t2 - t1 >= 0.24, f"« {k1} » répété après {(t2 - t1) * 1000:.0f} ms"
+
+
+def test_meditation_from_menu_title_is_safe_from_first_key(cfg, monkeypatch):
+    presses = run_meditation(cfg, monkeypatch, title_says_meditation=True)
+    keys = [k for k, _ in presses]
+    assert keys[0] == "a" and "z" in keys and "e" in keys
+    assert_chain_rules(presses)
+
+
+def test_meditation_detected_by_behaviour_is_safe_after_first_change(cfg, monkeypatch):
+    # Sans le titre (jeu manuel) : la 1re lettre est traitée en mode Combat, tout le reste en enchaînement.
+    presses = run_meditation(cfg, monkeypatch, title_says_meditation=False)
+    after_a = [p for p in presses if p[0] != "a"]
+    assert [k for k, _ in after_a][0] == "z" and "e" in [k for k, _ in after_a]
+    assert_chain_rules(after_a)

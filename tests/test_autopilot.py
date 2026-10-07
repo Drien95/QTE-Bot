@@ -356,4 +356,4 @@ def test_progress_shows_activity():
     pilot.step(obs_act(0.0, "méditation"))
     pilot.step(obs_act(0.3, "méditation", menu=True))
     pilot.step(obs_act(0.6, "méditation", qte=True))
-    assert pilot.progress == (0, 11, "Méditation · Extrême")
+    assert pilot.progress == (0, None, "Méditation · Extrême")   # nombre de touches inconnu en Méditation

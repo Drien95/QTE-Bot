@@ -69,6 +69,13 @@ class AutoDriver:
             return p.short_state, p.progress, p.sessions_done, p.settings.max_sessions
 
     @property
+    def meditation(self) -> bool:
+        """Session en cours lancée depuis un menu de Méditation (titre lu)."""
+        with self._lock:
+            p = self._pilot
+            return p is not None and p.state in (State.WAIT_START, State.TRAINING) and p.activity == "méditation"
+
+    @property
     def enabled(self) -> bool:
         with self._lock:
             return self._pilot is not None
