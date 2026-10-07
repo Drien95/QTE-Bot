@@ -27,6 +27,7 @@ LEARN_AGREEMENT = 2
 LEARN_HISTORY = 5
 RETRY_DELAY_S = 2.0
 MAX_FAILURES = 3
+MIN_FAILING_S = 6.0       # et au moins 6 s d'échecs continus : juste après une session, le jeu refuse E un moment
 DIFFICULTY_NAMES = {1: "Facile", 2: "Moyen", 3: "Difficile", 4: "Très difficile", 5: "Extrême"}
 
 
@@ -96,6 +97,7 @@ class Autopilot:
     _cases_taken: int = 0
     _failed_at: float | None = None
     _had_failure: bool = False
+    _failing_since: float | None = None
 
     def __post_init__(self) -> None:
         self.settings.validate()
@@ -163,7 +165,7 @@ class Autopilot:
 
     def _wait_start(self, o: Observation) -> None:
         if o.qte_visible:
-            self.failures = 0
+            self.failures, self._failing_since = 0, None
             self._enter_training(o.now, mine=True)
         elif o.now >= self._deadline:
             self._fail(o.now, "l'entraînement ne démarre pas après le clic")
@@ -250,7 +252,8 @@ class Autopilot:
 
     def _fail(self, now: float, reason: str) -> None:
         self.failures += 1
-        if self.failures >= MAX_FAILURES:
+        self._failing_since = now if self._failing_since is None else self._failing_since
+        if self.failures >= MAX_FAILURES and now - self._failing_since >= MIN_FAILING_S:
             return self._stop(reason)
         self.state, self._next_action = State.IDLE, now + (TURBO_RETRY_DELAY_S if self.turbo else RETRY_DELAY_S)
 

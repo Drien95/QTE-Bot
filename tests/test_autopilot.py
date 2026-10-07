@@ -305,3 +305,26 @@ def test_short_state_for_hud():
     assert pilot.short_state == "attente"
     run_session(pilot, 0.0)
     assert pilot.short_state.startswith("pause")
+
+
+def test_turbo_does_not_give_up_while_game_is_still_closing_the_session():
+    # 21:42:14 : session finie, E renvoyé 0,1 s après ; le jeu n'est pas prêt -> 3 échecs en 3 s -> arrêt à tort.
+    pilot, fake = make(difficulties=(5,))
+    pilot.turbo = True
+    t = 0.0
+    for _ in range(10):                        # 5 s sans menu (le journal : 3 échecs en 3,1 s)
+        pilot.step(obs(t))
+        t += 0.5
+    assert pilot.state is not State.STOPPED
+    pilot.step(obs(t, menu=True))              # le jeu accepte enfin E
+    assert fake.actions[-1][0] == "click"
+
+
+def test_still_stops_when_menu_never_opens():
+    pilot, _ = make()
+    pilot.turbo = True
+    t = 0.0
+    for _ in range(40):                        # 20 s sans menu
+        pilot.step(obs(t))
+        t += 0.5
+    assert pilot.state is State.STOPPED and "cercle" in pilot.reason
