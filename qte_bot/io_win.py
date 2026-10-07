@@ -47,12 +47,48 @@ def capture_region(roi: Roi, sct: mss.base.MSSBase | None = None) -> dict[str, i
     }
 
 
+class DxgiGrabber:
+    """Capture DXGI (carte graphique) : ~2 ms par image neuve au lieu de ~23 ms en GDI.
+
+    - Toujours plein écran : la capture de sous-région de dxcam fait planter Python (testé) ; on découpe nous-mêmes.
+    - grab_bgra() renvoie None si l'écran n'a pas changé : le moteur réutilise alors sa dernière analyse.
+    - Le HUD (WDA_EXCLUDEFROMCAPTURE) reste invisible pour elle (testé : 0 pixel vu).
+    """
+
+    kind = "DXGI (rapide)"
+
+    def __init__(self, roi: Roi):
+        import dxcam
+
+        self.region = capture_region(roi)
+        with mss.mss() as sct:
+            primary = sct.monitors[1]
+        self._cam = dxcam.create(output_idx=0, output_color="BGRA")
+        if self._cam is None or (self._cam.height, self._cam.width) != (primary["height"], primary["width"]):
+            raise OSError("la sortie DXGI 0 n'est pas l'écran principal")
+        top, left = self.region["top"] - primary["top"], self.region["left"] - primary["left"]
+        self._crop = (slice(top, top + self.region["height"]), slice(left, left + self.region["width"]))
+
+    def grab_bgra(self) -> np.ndarray | None:
+        frame = self._cam.grab()
+        return None if frame is None else frame[self._crop]
+
+
+def make_grabber(roi: Roi):
+    """DXGI si possible, sinon l'ancienne capture GDI (toujours disponible)."""
+    try:
+        return DxgiGrabber(roi)
+    except Exception:  # pilote, bureau à distance, dxcam absent… : on reste fonctionnel, juste plus lent
+        return ScreenGrabber(roi)
+
+
 class ScreenGrabber:
     """Capture une zone fixe de l'écran principal en niveaux de gris."""
 
     def __init__(self, roi: Roi):
         self._sct = mss.mss()
         self.region = capture_region(roi, self._sct)
+        self.kind = "GDI (compatible)"
 
     def grab_bgra(self) -> np.ndarray:
         return np.asarray(self._sct.grab(self.region))
@@ -193,5 +229,5 @@ def real_io():
     """Les vrais accès système. À n'utiliser que dans les points d'entrée (menu, --console)."""
     from qte_bot.game_io import GameIo
 
-    return GameIo(make_grabber=ScreenGrabber, make_hotkeys=Hotkeys, press_key=press_key,
+    return GameIo(make_grabber=make_grabber, make_hotkeys=Hotkeys, press_key=press_key,
                   click_at=click_at, foreground_process=foreground_process)

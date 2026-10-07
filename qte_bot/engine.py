@@ -25,6 +25,9 @@ ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
 INSIST_EVERY_MS = 150  # case encore là après l'appui = pas prise : on réappuie à ce rythme (plafonné)
 MAX_UNSURE_GLYPHS = 200  # lettres douteuses gardées pour apprendre des variantes (≈100 octets chacune)
+OPENCV_THREADS = 1       # mesuré : 1 thread = 60 % d'un cœur, multi-thread = 141 % pour la même cadence
+CALM_AFTER_S = 2.0        # aucune case depuis 2 s : on analyse moins souvent…
+CALM_PERIOD_S = 1 / 30    # …30 images/s (au pire +16 ms pour voir la 1re case, fenêtre de 500 ms)
 UI_KEY_HOLD_MS = 150   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
 
 Emit = Callable[[str], None]
@@ -79,6 +82,9 @@ class Engine:
         self._last_frame: np.ndarray | None = None
         self._origin = (0, 0)  # coin haut-gauche de la zone capturée, en coordonnées écran
         self._foreground_warned = False
+        self._analysis = None  # (bgra, gris, case, lecture) de la dernière image neuve
+        self._last_box_at = float("-inf")
+        self._last_analysis_at = float("-inf")
         self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe, self._on_session)
         self.xp = XpTracker()
         self._repress = self.cfg.repress
@@ -149,12 +155,13 @@ class Engine:
     # --- boucle ---
     def run(self) -> None:
         io = self._require_io()
+        cv2.setNumThreads(OPENCV_THREADS)
         grabber = io.make_grabber(self.cfg.roi)
         self._origin = (grabber.region["left"], grabber.region["top"])
         episodes = EpisodeLog(self.cfg.release_frames, self._on_episode)
         period = 1.0 / self.cfg.fps
         tracker = hotkeys = None
-        self.emit("prêt : zone surveillée = tout l'écran principal")
+        self.emit(f"prêt : tout l'écran principal surveillé · capture {getattr(grabber, 'kind', '?')}")
         while not self._stop.is_set():
             start = time.perf_counter()
             with self._lock:
@@ -183,12 +190,18 @@ class Engine:
         return self.io
 
     def _step(self, grabber, tracker: PressTracker, episodes: EpisodeLog, timing: Timing, io: GameIo) -> None:
-        bgra = grabber.grab_bgra()
-        gray = cv2.cvtColor(bgra, cv2.COLOR_BGRA2GRAY)
         now = time.perf_counter()
+        bgra = grabber.grab_bgra() if self._time_to_analyse(now) else None
+        if bgra is not None or self._analysis is None:  # écran inchangé : on réutilise la dernière analyse
+            bgra = bgra if bgra is not None else np.zeros((1, 1, 4), np.uint8)
+            gray = cv2.cvtColor(bgra, cv2.COLOR_BGRA2GRAY)
+            prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side) if gray.size > 1 else None
+            match = self.recognizer.classify(prompt.glyph, prompt.mask) if prompt else None
+            self._analysis = (bgra, gray, prompt, match)
+        bgra, gray, prompt, match = self._analysis
+        if prompt is not None:
+            self._last_box_at = now
         foreground = self._game_in_front(io.foreground_process())
-        prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side)
-        match = self.recognizer.classify(prompt.glyph, prompt.mask) if prompt else None
         key = tracker.update(match.label if match else None, now, visible=prompt is not None,
                              guess=match.guess if match else None, guess_score=match.score if match else 0.0)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
@@ -216,6 +229,14 @@ class Engine:
 
     def _screen_rect(self, box) -> tuple[int, int, int, int]:
         return box.x + self._origin[0], box.y + self._origin[1], box.w, box.h
+
+    def _time_to_analyse(self, now: float) -> bool:
+        """Pleine cadence dès qu'une case est apparue récemment ; 30/s au calme (CPU divisé par ~2)."""
+        calm = now - self._last_box_at > CALM_AFTER_S
+        if calm and now - self._last_analysis_at < CALM_PERIOD_S:
+            return False
+        self._last_analysis_at = now
+        return True
 
     def _game_in_front(self, process: str) -> bool:
         ok = process == self.cfg.game_process

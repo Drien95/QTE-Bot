@@ -37,6 +37,7 @@ class FakeScreen:
         self.until = None
         self.seconds = seconds
         self.region = {"left": 0, "top": 0, "width": self.box.shape[1], "height": self.box.shape[0]}
+        self.kind = "simulée"
 
     def grab_bgra(self):
         now = time.perf_counter()
@@ -115,3 +116,30 @@ def test_unsure_letters_are_kept_for_learning(cfg):
                                unsure=(glyph, Match(None, 0.42, "s", 0.1))))
     saved = list((folder / "lettres").glob("*_s_0.42_*.png"))
     assert len(saved) == 1 and not list(folder.glob("*.png"))  # pas de capture d'écran, juste la lettre
+
+
+class StillScreen(FakeScreen):
+    """Comme la capture DXGI quand rien ne bouge : une image neuve, puis None (« inchangé ») indéfiniment."""
+
+    def __init__(self):
+        super().__init__(seconds=0)
+        self.calls = 0
+
+    def grab_bgra(self):
+        self.calls += 1
+        return self.box if self.calls == 1 else None
+
+
+def test_unchanged_screen_reuses_last_analysis(cfg, monkeypatch):
+    from qte_bot import engine as engine_module
+
+    detections = []
+    real_find = engine_module.find_prompt
+    monkeypatch.setattr(engine_module, "find_prompt", lambda *a: detections.append(1) or real_find(*a))
+    presses = []
+    io = GameIo(make_grabber=lambda _roi: StillScreen(), make_hotkeys=NoHotkeys,
+                press_key=lambda key, ms: presses.append(key), click_at=lambda x, y, fast: None,
+                foreground_process=lambda: "gmod.exe")
+    run_briefly(Engine(cfg, build_recognizer(cfg), Path(tempfile.mkdtemp()), emit=lambda _l: None, io=io))
+    assert presses and presses[0] == "e"   # la case est toujours « là » : l'appui part au délai prévu
+    assert len(detections) == 1           # une seule analyse pour une seule image neuve

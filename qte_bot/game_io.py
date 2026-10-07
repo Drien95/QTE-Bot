@@ -15,8 +15,9 @@ from qte_bot.config import Roi
 
 class Grabber(Protocol):
     region: dict[str, int]
+    kind: str
 
-    def grab_bgra(self) -> np.ndarray: ...
+    def grab_bgra(self) -> np.ndarray | None: ...  # None = écran inchangé depuis la dernière image
 
 
 class HotkeyPoller(Protocol):
