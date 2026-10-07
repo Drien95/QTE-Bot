@@ -66,6 +66,10 @@ ATTENTE ─E─► MENU (5 barres colorées) ─clic─► LANCEMENT ─1re case
 - Touches et bouton souris toujours relâchés (`try/finally`), même sur erreur.
 - Raccourcis refusés s'ils tombent sur une touche que le bot tape lui-même (sinon il se mettrait en pause seul).
 - HUD exclu des captures d'écran (`WDA_EXCLUDEFROMCAPTURE`) : le bot ne voit jamais ses propres cadres.
+- **Tests et scripts ne peuvent pas agir sur le jeu** : le moteur ne touche jamais l'écran, le clavier ou la
+  souris lui-même, ils lui sont injectés (`GameIo`) ; seuls le menu et `--console` passent les vrais
+  (`io_win.real_io()`), un moteur sans accès refuse de démarrer. En plus, `QTE_BOT_DRY_RUN=1` (posé
+  automatiquement par `tests/conftest.py`) neutralise tout envoi au niveau de `SendInput`.
 - Config écrite via fichier temporaire validé : jamais de `config.json` cassé ; journaux bornés à 1 Mo.
 
 ## Configuration (`config.json`)

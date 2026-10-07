@@ -25,7 +25,15 @@ def test_scancode_matches_active_layout(char):
 @pytest.mark.skipif(os.environ.get("QTE_LIVE_KEYS") != "1",
                     reason="tape de vraies touches dans la fenêtre active : lancer avec QTE_LIVE_KEYS=1")
 @pytest.mark.parametrize("char", list("azqw"))
-def test_injected_key_is_seen_as_that_letter(char):
+def test_injected_key_is_seen_as_that_letter(char, monkeypatch):
+    from qte_bot.config import load_config
+    from qte_bot.io_win import DRY_RUN_ENV, foreground_process
+    from qte_bot.main import ROOT
+
+    game = load_config(ROOT / "config.json").game_process
+    if foreground_process() == game:
+        pytest.skip(f"{game} est au premier plan : refus de taper de vraies touches dans le jeu")
+    monkeypatch.delenv(DRY_RUN_ENV)  # seul test autorisé à lever le verrou, et seulement sur demande explicite
     vk = user32.VkKeyScanW(ord(char)) & 0xFF
     seen = []
     threading.Thread(target=lambda: (time.sleep(0.02), seen.append(user32.GetAsyncKeyState(vk) & 0x8000))).start()

@@ -14,6 +14,7 @@ from qte_bot.auto_driver import AutoDriver
 from qte_bot.config import Config
 from qte_bot.detector import find_prompt
 from qte_bot.episodes import EpisodeLog, Summary
+from qte_bot.game_io import GameIo
 from qte_bot.hud import HudFeed, Phase
 from qte_bot.recognizer import Recognizer
 from qte_bot.textlog import append_line
@@ -66,6 +67,7 @@ class Engine:
     emit: Emit = print
     stats: Stats = field(default_factory=Stats)
     hud: HudFeed | None = None  # affichage par-dessus le jeu (optionnel)
+    io: GameIo | None = None    # accès écran/clavier/souris ; None = le moteur refuse de démarrer
 
     def __post_init__(self) -> None:
         self._lock = threading.Lock()
@@ -129,20 +131,17 @@ class Engine:
 
     def _auto_press(self, key: str) -> None:
         """Touche d'interaction (E) : maintenue comme un humain, l'action « utiliser » passe par le serveur."""
-        from qte_bot.io_win import press_key
-        press_key(key, UI_KEY_HOLD_MS)
+        self._require_io().press_key(key, UI_KEY_HOLD_MS)
         self.emit(f"auto : touche '{key.upper()}' envoyée ({UI_KEY_HOLD_MS} ms)")
 
     def _auto_click(self, x: int, y: int) -> None:
-        from qte_bot.io_win import click_at
-        click_at(x, y)
+        self._require_io().click_at(x, y)
         self.emit(f"auto : clic envoyé en ({x}, {y})")
 
     # --- boucle ---
     def run(self) -> None:
-        from qte_bot.io_win import Hotkeys, ScreenGrabber, press_key  # Windows uniquement
-
-        grabber = ScreenGrabber(self.cfg.roi)
+        io = self._require_io()
+        grabber = io.make_grabber(self.cfg.roi)
         self._origin = (grabber.region["left"], grabber.region["top"])
         episodes = EpisodeLog(self.cfg.release_frames, self._on_episode)
         period = 1.0 / self.cfg.fps
@@ -156,32 +155,35 @@ class Engine:
                 repress, codes = self._repress, self._hotkey_codes
             if rebuild:  # réglage changé depuis le menu : on repart d'un état propre
                 tracker = self._new_tracker(repress)
-                hotkeys = Hotkeys(codes)
+                hotkeys = io.make_hotkeys(codes)
             if self._handle_hotkeys(hotkeys.poll()):
                 tracker = self._new_tracker(repress)
             if not enabled:  # en pause : ni capture ni CPU consommé
                 time.sleep(0.05)
                 continue
             tracker.set_delay(timing.delay_min_ms, timing.delay_max_ms)
-            self._step(grabber, tracker, episodes, timing, press_key)
+            self._step(grabber, tracker, episodes, timing, io)
             time.sleep(max(0.0, period - (time.perf_counter() - start)))
 
     def _new_tracker(self, repress: bool) -> PressTracker:
         return PressTracker(self.cfg.confirm_frames, self.cfg.release_frames,
                             repress_after_ms=REPRESS_AFTER_MS if repress else None)
 
-    def _step(self, grabber, tracker: PressTracker, episodes: EpisodeLog, timing: Timing, press_key) -> None:
-        from qte_bot.io_win import foreground_process
+    def _require_io(self) -> GameIo:
+        if self.io is None:
+            raise RuntimeError("Engine sans io : passe io=io_win.real_io() (menu) ou un faux (tests)")
+        return self.io
 
+    def _step(self, grabber, tracker: PressTracker, episodes: EpisodeLog, timing: Timing, io: GameIo) -> None:
         bgra = grabber.grab_bgra()
         gray = cv2.cvtColor(bgra, cv2.COLOR_BGRA2GRAY)
         now = time.perf_counter()
-        foreground = self._game_in_front(foreground_process())
+        foreground = self._game_in_front(io.foreground_process())
         prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side)
         match = self.recognizer.classify(prompt.glyph) if prompt else None
         key = tracker.update(match.label if match else None, now)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
-            press_key(key, timing.hold_ms)
+            io.press_key(key, timing.hold_ms)
         elif key:
             key = None
         episodes.observe(now, gray, prompt, match, key)

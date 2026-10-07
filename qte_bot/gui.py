@@ -301,7 +301,9 @@ class App:
 def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir: Path) -> int:
     _dpi_aware()  # sinon tkinter et la capture ne parlent pas des mêmes pixels sur écran mis à l'échelle
     feed = HudFeed()
-    engine = Engine(cfg, recognizer, captures_dir, hud=feed)
+    from qte_bot.io_win import real_io
+
+    engine = Engine(cfg, recognizer, captures_dir, hud=feed, io=real_io())
     root = tk.Tk()
     app = App(root, cfg, config_path, engine)
     app.overlay = _start_overlay(root, cfg, feed, app)

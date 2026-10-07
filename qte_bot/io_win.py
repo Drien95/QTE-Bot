@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ctypes
+import os
 import time
 
 import cv2
@@ -82,7 +83,17 @@ def press_key(key: str, hold_ms: int) -> None:
         _send(scancode, KEYEVENTF_SCANCODE | KEYEVENTF_KEYUP)
 
 
+DRY_RUN_ENV = "QTE_BOT_DRY_RUN"
+
+
+def dry_run() -> bool:
+    """QTE_BOT_DRY_RUN=1 (posé par les tests) : aucune touche ni clic ne sort, quoi que fasse l'appelant."""
+    return os.environ.get(DRY_RUN_ENV) == "1"
+
+
 def _send(scancode: int, flags: int) -> None:
+    if dry_run():
+        return
     event = _INPUT(type=INPUT_KEYBOARD, ki=_KEYBDINPUT(wVk=0, wScan=scancode, dwFlags=flags))
     if _user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(event)) != 1:
         raise OSError(f"SendInput refusé (jeu lancé en administrateur ?) code {ctypes.GetLastError()}")
@@ -145,6 +156,8 @@ def click_at(x: int, y: int) -> None:
 
 
 def _send_mouse(nx: int, ny: int, flags: int) -> None:
+    if dry_run():
+        return
     event = _MOUSE_INPUT(type=INPUT_MOUSE, mi=_MOUSEINPUT(dx=nx, dy=ny, dwFlags=flags))
     if _user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(_INPUT)) != 1:
         raise OSError(f"SendInput souris refusé, code {ctypes.GetLastError()}")
@@ -172,3 +185,11 @@ def foreground_process() -> str:
         return buf.value.rsplit("\\", 1)[-1].lower()
     finally:
         _kernel32.CloseHandle(handle)
+
+
+def real_io():
+    """Les vrais accès système. À n'utiliser que dans les points d'entrée (menu, --console)."""
+    from qte_bot.game_io import GameIo
+
+    return GameIo(make_grabber=ScreenGrabber, make_hotkeys=Hotkeys, press_key=press_key,
+                  click_at=click_at, foreground_process=foreground_process)

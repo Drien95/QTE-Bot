@@ -44,7 +44,9 @@ def run_on_image(cfg: Config, image_path: Path) -> int:
 def run_console(cfg: Config) -> int:
     from qte_bot.engine import Engine
 
-    Engine(cfg, build_recognizer(cfg), CAPTURES_DIR).run()
+    from qte_bot.io_win import real_io
+
+    Engine(cfg, build_recognizer(cfg), CAPTURES_DIR, io=real_io()).run()
     return 0
 
 
