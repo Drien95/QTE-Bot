@@ -22,7 +22,8 @@ SESSION_END_S = 2.5       # secours : plus aucune case depuis 2.5 s = session te
 FAIL_END_S = 1.0          # après une case ratée (le jeu arrête la session), marge courte avant de conclure
 # Cases RÉELLEMENT affichées par session. Le menu annonce 12 en Extrême, le jeu en montre 11 (21 sessions
 # mesurées) : on ne se fie pas au menu. Les autres difficultés s'apprennent en jouant (LEARN_AGREEMENT sessions).
-KNOWN_CASES = {5: 11}
+KNOWN_CASES = {5: 11}  # Combat et Méditation : même exercice, même nombre de cases
+ACTIVITY_NAMES = {"combat": "Combat", "méditation": "Méditation"}
 LEARN_AGREEMENT = 2
 LEARN_HISTORY = 5
 RETRY_DELAY_S = 2.0
@@ -71,6 +72,7 @@ class Observation:
     menu_rows: list[Rect]     # lignes du menu des difficultés, [] si fermé
     qte_visible: bool
     katana_warning: bool
+    activity: str = "combat"  # lu sur le titre du menu : « combat » ou « méditation » (affichage seulement)
 
 
 @dataclass
@@ -92,8 +94,9 @@ class Autopilot:
     _in_front: bool = True
     _started_at: float | None = None
     _session_difficulty: int | None = None  # difficulté choisie par NOUS (None = session lancée à la main)
+    _activity: str = "combat"
     turbo: bool = False      # ⚡ : pas de pause entre sessions, nouvel essai de E rapide
-    learned: dict[int, list[int]] = field(default_factory=dict)  # difficulté -> cases des sessions propres
+    learned: dict[int, list[int]] = field(default_factory=dict)  # difficulté -> cases (commun aux 2 activités)
     _cases_taken: int = 0
     _failed_at: float | None = None
     _had_failure: bool = False
@@ -131,8 +134,8 @@ class Autopilot:
         """(cases prises, cases attendues ou None, difficulté) pendant une session lancée par nous, sinon None."""
         if self.state is not State.TRAINING or self._session_difficulty is None:
             return None
-        d = self._session_difficulty
-        return self._cases_taken, self.expected_cases(d), DIFFICULTY_NAMES[d]
+        d, a = self._session_difficulty, self._activity
+        return self._cases_taken, self.expected_cases(d), f"{ACTIVITY_NAMES.get(a, a)} · {DIFFICULTY_NAMES[d]}"
 
     @property
     def short_state(self) -> str:
@@ -207,6 +210,7 @@ class Autopilot:
 
     # --- outils ---
     def _choose(self, o: Observation) -> None:
+        self._activity = o.activity
         self.last_difficulty = self.rng.choice(sorted(self.settings.difficulties))
         x, y, w, h = o.menu_rows[self.last_difficulty - 1]
         self.click(x + w // 3, y + h // 2)

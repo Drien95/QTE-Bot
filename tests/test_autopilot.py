@@ -297,7 +297,7 @@ def test_progress_reports_current_session():
     start_session(pilot, 0.0)
     pilot.case_done(True, 1.0)
     pilot.case_done(True, 2.0)
-    assert pilot.progress == (2, 11, "Extrême")       # Extrême : 11 cases connues
+    assert pilot.progress == (2, 11, "Combat · Extrême")   # Combat Extrême : 11 cases connues
 
 
 def test_short_state_for_hud():
@@ -328,3 +328,32 @@ def test_still_stops_when_menu_never_opens():
         pilot.step(obs(t))
         t += 0.5
     assert pilot.state is State.STOPPED and "cercle" in pilot.reason
+
+
+def obs_act(now, activity, **kw):
+    o = obs(now, **kw)
+    return Observation(o.now, o.foreground, o.menu_rows, o.qte_visible, o.katana_warning, activity)
+
+
+def test_learning_is_shared_by_combat_and_meditation():
+    # Même exercice : ce qui est appris en Méditation vaut pour le Combat, et inversement.
+    pilot, _ = make(difficulties=(3,), pause=(0, 0))
+    t = 0.0
+    for _ in range(2):
+        pilot.step(obs_act(t, "méditation"))
+        pilot.step(obs_act(t + 0.3, "méditation", menu=True))
+        pilot.step(obs_act(t + 0.6, "méditation", qte=True))
+        for i in range(9):
+            pilot.case_done(True, t + 1 + i)
+        pilot.step(obs_act(t + 13, "méditation"))
+        t += 14
+    assert pilot.expected_cases(3) == 9
+    assert pilot.expected_cases(5) == 11
+
+
+def test_progress_shows_activity():
+    pilot, _ = make(difficulties=(5,))
+    pilot.step(obs_act(0.0, "méditation"))
+    pilot.step(obs_act(0.3, "méditation", menu=True))
+    pilot.step(obs_act(0.6, "méditation", qte=True))
+    assert pilot.progress == (0, 11, "Méditation · Extrême")

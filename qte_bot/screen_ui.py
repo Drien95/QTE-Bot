@@ -47,6 +47,23 @@ def _aligned_column(bars: list[Rect]) -> list[Rect] | None:
     return None
 
 
+TITLE_OFFSET = (-1, -65)       # titre du menu par rapport à la 1re ligne (dx, dy), interface 2D fixe
+TITLE_SEARCH = 12              # tolérance de position (px)
+TITLE_MIN_SCORE = 0.8
+
+
+def detect_activity(gray: np.ndarray, first_row: Rect) -> str:
+    """« combat » si le titre du menu est ENTRAINEMENT COMBAT, sinon « méditation » (seules activités du jeu)."""
+    tpl = _template("menu_combat.png")
+    x, y = first_row[0] + TITLE_OFFSET[0], first_row[1] + TITLE_OFFSET[1]
+    top, left = max(0, y - TITLE_SEARCH), max(0, x - TITLE_SEARCH)
+    zone = gray[top: y + tpl.shape[0] + TITLE_SEARCH, left: x + tpl.shape[1] + TITLE_SEARCH]
+    if zone.shape[0] < tpl.shape[0] or zone.shape[1] < tpl.shape[1]:
+        return "méditation"
+    score = cv2.minMaxLoc(cv2.matchTemplate(zone, tpl, cv2.TM_CCOEFF_NORMED))[1]
+    return "combat" if score >= TITLE_MIN_SCORE else "méditation"
+
+
 def katana_warning_visible(gray: np.ndarray) -> bool:
     tpl = _template("katana_warning.png")
     zone = gray[KATANA_ZONE]

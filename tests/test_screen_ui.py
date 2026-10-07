@@ -37,3 +37,22 @@ def test_katana_warning_detected():
 def test_katana_warning_absent(name):
     # full_E affiche un bandeau « Astuce » au même endroit : ne doit pas déclencher.
     assert not katana_warning_visible(cv2.cvtColor(bgr(name), cv2.COLOR_BGR2GRAY))
+
+
+def test_menu_title_says_combat():
+    from qte_bot.screen_ui import detect_activity
+
+    image = bgr("menu")
+    rows = find_difficulty_rows(image)
+    assert detect_activity(cv2.cvtColor(image, cv2.COLOR_BGR2GRAY), rows[0]) == "combat"
+
+
+def test_other_title_is_meditation():
+    from qte_bot.screen_ui import detect_activity
+
+    image = bgr("menu")
+    rows = find_difficulty_rows(image)
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    gray[299:314, 850:966] = 20                     # « COMBAT » effacé : un autre titre
+    cv2.putText(gray, "MEDITATION", (850, 312), cv2.FONT_HERSHEY_SIMPLEX, 0.45, 230, 1)
+    assert detect_activity(gray, rows[0]) == "méditation"

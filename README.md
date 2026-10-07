@@ -78,6 +78,12 @@ la case reste (10 max), aucune pause entre sessions, menu cherché à chaque ima
 OpenCV en mono-thread (le multi-thread coûtait plus qu'il ne rapportait).
 La capture de **sous-région** de `dxcam` fait planter Python : on capture toujours tout l'écran et on découpe.
 
+## Combat et Méditation
+
+Même exercice, même menu, mêmes difficultés et même XP aux mêmes emplacements : le bot fait les deux sans
+réglage. Seule différence : le Combat exige le katana en main (sinon le jeu affiche un message et le bot
+s'arrête). L'activité est lue sur le titre du menu (« ENTRAINEMENT COMBAT » ou non) et affichée sur le HUD.
+
 ## Sécurités
 
 - Aucune touche ni clic si `game_process` (`gmod.exe`) n'est pas au premier plan.

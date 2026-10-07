@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from qte_bot.autopilot import Autopilot, AutoSettings, Observation, State
-from qte_bot.screen_ui import find_difficulty_rows, katana_warning_visible
+from qte_bot.screen_ui import detect_activity, find_difficulty_rows, katana_warning_visible
 
 UI_SCAN_PERIOD_S = 0.1  # menu et message katana : 10 analyses/s, et SEULEMENT avant l'entraînement
 SCAN_STATES = {State.IDLE, State.WAIT_MENU, State.WAIT_START}  # en entraînement / pause : inutile, CPU économisé
@@ -31,7 +31,8 @@ class AutoDriver:
         self._katana = False
         self._last_status = ""
         self._turbo = False
-        self._learned: dict[int, list[int]] = {}  # nombre de cases appris, gardé d'une activation à l'autre
+        self._learned: dict[int, list[int]] = {}
+        self._activity = "combat"  # nombre de cases appris, gardé d'une activation à l'autre
 
     # --- pilotage depuis le menu (autre thread) ---
     def configure(self, settings: AutoSettings) -> None:
@@ -98,10 +99,12 @@ class AutoDriver:
             self._rows, self._katana = [], False
         elif now - self._last_scan >= (0.0 if self._turbo else UI_SCAN_PERIOD_S):  # turbo : à chaque image
             self._last_scan = now
-            self._rows = [(x + origin[0], y + origin[1], w, h)
-                          for x, y, w, h in find_difficulty_rows(cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR))]
+            rows = find_difficulty_rows(cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR))
+            if rows:  # titre lu une fois le menu affiché : Combat (épée requise) ou Méditation
+                self._activity = detect_activity(gray, rows[0])
+            self._rows = [(x + origin[0], y + origin[1], w, h) for x, y, w, h in rows]
             self._katana = katana_warning_visible(gray)
-        pilot.step(Observation(now, foreground, self._rows, qte_visible, self._katana))
+        pilot.step(Observation(now, foreground, self._rows, qte_visible, self._katana, self._activity))
         if pilot.status != self._last_status:  # une ligne par changement d'état, pas à chaque image
             self._last_status = pilot.status
             self._emit(f"auto : {pilot.status}")
