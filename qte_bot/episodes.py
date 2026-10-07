@@ -29,6 +29,7 @@ class Episode:
     votes: dict[str, int] = field(default_factory=dict)
     first_seen: float = 0.0
     last_seen: float = 0.0
+    unsure: tuple[np.ndarray, Match] | None = None  # 1re image où la lettre était douteuse (lettre brute)
     pressed_at: float | None = None  # DERNIER appui (un réappui réussi compte comme pris)
     presses: int = 0
 
@@ -45,6 +46,7 @@ class Summary:
     press_after_ms: float | None    # apparition -> appui (notre réactivité)
     gone_after_press_ms: float | None  # dernier appui -> disparition : court = le jeu a pris la touche
     presses: int = 0
+    unsure: tuple[np.ndarray, Match] | None = None  # lettre douteuse : sert à apprendre une variante
 
 
 class EpisodeLog:
@@ -69,6 +71,8 @@ class EpisodeLog:
             ep.pressed_at, ep.presses = now, ep.presses + 1
         ep.frames += 1
         ep.recognized += match.label is not None
+        if match.label is None and ep.unsure is None:
+            ep.unsure = (prompt.mask.copy(), match)
         ep.votes[match.guess] = ep.votes.get(match.guess, 0) + 1
         ep.pressed = ep.pressed or pressed
         if ep.best is None or match.score > ep.best.score:
@@ -82,4 +86,4 @@ class EpisodeLog:
                              visible_ms=ms(ep.first_seen, ep.last_seen),
                              press_after_ms=None if pressed is None else ms(ep.first_seen, pressed),
                              gone_after_press_ms=None if pressed is None else ms(pressed, ep.last_seen),
-                             presses=ep.presses))
+                             presses=ep.presses, unsure=ep.unsure))

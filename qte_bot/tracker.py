@@ -23,8 +23,15 @@ class PressTracker:
             raise ValueError(f"délai invalide : il faut 0 <= min <= max <= {MAX_DELAY_MS} ms")
         self._delay_ms = (min_ms, max_ms)
 
-    def update(self, label: str | None, now: float) -> str | None:
-        """Lettre vue sur l'image (ou None) à l'instant `now` (s) ; renvoie la touche à presser maintenant."""
+    def update(self, label: str | None, now: float, visible: bool | None = None) -> str | None:
+        """Lettre lue sur l'image (ou None) à l'instant `now` (s) ; renvoie la touche à presser maintenant.
+
+        `visible=True` avec `label=None` : la case est là mais la lettre est douteuse sur CETTE image.
+        On garde tout l'état (pas une disparition) et on attend une image lue avec certitude.
+        """
+        if label is None and visible:
+            self._misses = 0
+            return None
         if label is None:
             self._misses += 1
             if self._misses >= self._release:  # case disparue : on se réarme

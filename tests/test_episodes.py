@@ -54,3 +54,14 @@ def test_repress_counts_from_last_press():
     # appui à t=0.1, réappui à t=0.3, case disparue juste après
     s = run([(ok, None), (ok, "w"), (ok, None), (ok, "w"), (None, None), (None, None)])[0]
     assert s.presses == 2 and s.gone_after_press_ms == 0
+
+
+def test_keeps_the_first_unsure_glyph_for_learning():
+    ok, unsure = Match("q", 1.0, "q", 0.6), Match(None, 0.61, "q", 0.2)
+    s = run([(ok, None), (unsure, None), (ok, "q"), (None, None), (None, None)])[0]
+    assert s.unsure is not None and s.unsure[1].score == 0.61
+
+
+def test_no_unsure_glyph_when_all_frames_read():
+    ok = Match("q", 1.0, "q", 0.6)
+    assert run([(ok, None), (ok, "q"), (None, None), (None, None)])[0].unsure is None

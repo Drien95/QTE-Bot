@@ -97,3 +97,18 @@ def test_dry_run_blocks_sendinput_at_lowest_level(monkeypatch):
     io_win.press_key("e", 1)
     io_win.click_at(10, 10)
     assert sent == []
+
+
+def test_unsure_letters_are_kept_for_learning(cfg):
+    from qte_bot.episodes import Snapshot, Summary
+    from qte_bot.detector import Box
+    from qte_bot.recognizer import Match
+
+    folder = Path(tempfile.mkdtemp())
+    engine = Engine(cfg, build_recognizer(cfg), folder, emit=lambda _l: None)
+    glyph = np.zeros((12, 10), np.uint8)
+    snap = Snapshot(np.zeros((20, 20), np.uint8), Box(0, 0, 10, 10), glyph, glyph)
+    engine._on_episode(Summary(18, 0, None, Match(None, 0.42, "s", 0.1), {"s": 18}, snap, 660, None, None,
+                               unsure=(glyph, Match(None, 0.42, "s", 0.1))))
+    saved = list((folder / "lettres").glob("*_s_0.42_*.png"))
+    assert len(saved) == 1 and not list(folder.glob("*.png"))  # pas de capture d'écran, juste la lettre

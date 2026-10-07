@@ -115,3 +115,18 @@ def test_repress_disabled():
 def test_repress_budget_resets_for_next_letter():
     out = feed(make_repress(), ["w"] * 7 + ["a"] * 7)
     assert out.count("w") == 2 and out.count("a") == 2
+
+
+def test_unsure_frames_while_box_visible_do_not_reset():
+    # Raté du 20:15:16 : S lu sur quelques images seulement, douteux (None) sur les autres, case toujours visible.
+    tracker = make(confirm=2, release=3, delay=(200, 200))
+    seq = ["s", None, None, None, None, "s", None, None, "s", None, "s"]
+    out = [tracker.update(label, i * FRAME, visible=True) for i, label in enumerate(seq)]
+    assert out.count("s") == 1
+
+
+def test_box_really_gone_still_rearms():
+    tracker = make(confirm=1, release=2)
+    seq = [("w", True), (None, False), (None, False), ("w", True)]
+    out = [tracker.update(label, i * FRAME, visible=vis) for i, (label, vis) in enumerate(seq)]
+    assert out == ["w", None, None, "w"]

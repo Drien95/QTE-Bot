@@ -24,6 +24,7 @@ from qte_bot.tracker import PressTracker
 ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a pris la touche
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
 REPRESS_AFTER_MS = 150  # case encore là 150 ms après l'appui = pas prise : un 2e appui
+MAX_UNSURE_GLYPHS = 200  # lettres douteuses gardées pour apprendre des variantes (≈100 octets chacune)
 UI_KEY_HOLD_MS = 150   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
 
 Emit = Callable[[str], None]
@@ -181,7 +182,7 @@ class Engine:
         foreground = self._game_in_front(io.foreground_process())
         prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side)
         match = self.recognizer.classify(prompt.glyph) if prompt else None
-        key = tracker.update(match.label if match else None, now)
+        key = tracker.update(match.label if match else None, now, visible=prompt is not None)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
             io.press_key(key, timing.hold_ms)
         elif key:
@@ -241,9 +242,18 @@ class Engine:
         line = f"{time.strftime('%H:%M:%S')} {verdict:<11} {detail} | score {s.best.score:.2f}"
         self.emit(line)
         self._journal(line)
+        if s.unsure is not None:
+            self._keep_unsure_glyph(*s.unsure)
         if self.cfg.save_captures and self._saved < MAX_AUTO_SAVES:  # diagnostic seulement
             self._save_scene(s, verdict)
             self._saved += 1
+
+    def _keep_unsure_glyph(self, mask: np.ndarray, match) -> None:
+        """Lettre que le bot n'a pas su lire : gardée (minuscule) pour en faire un modèle si c'est une variante."""
+        folder = self.captures_dir / "lettres"
+        if folder.exists() and sum(1 for _ in folder.glob("*.png")) >= MAX_UNSURE_GLYPHS:
+            return  # borne globale, sur toutes les sessions
+        self._save(mask, f"{match.guess}_{match.score:.2f}_{time.perf_counter_ns() % 10**6}", sub="lettres")
 
     def _journal(self, line: str) -> None:
         append_line(self.captures_dir / "journal.txt", line)
