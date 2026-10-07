@@ -118,7 +118,7 @@ class App:
         grid.pack(anchor="w")
         self._field(grid, 0, "Délai avant l'appui (ms, min → max)", (self.delay_min, self.delay_max), 0, 1000, 10, "qte")
         self._field(grid, 1, "Durée de l'appui (ms)", (self.hold,), 1, 200, 5, "qte")
-        w.check(box, "Réappuyer une fois si la touche n'est pas prise", self.repress,
+        w.check(box, "Insister : réappuyer tant que la case reste, tenter la lettre probable si elle est douteuse", self.repress,
                 lambda: self._changed("qte")).pack(anchor="w", pady=(6, 0))
         w.label(box, "Conseil : délai min ≥ 120 ms, le jeu ignore les appuis trop rapides.", muted=True).pack(anchor="w", pady=(4, 0))
 
@@ -266,7 +266,7 @@ class App:
         self.stat["sessions"].set(f"{ok}/{ok + failed}")
         self.stat["cases"].set(f"{s.taken}/{s.cases}")
         rates = [f"{DIFFICULTY_NAMES[d]} {st.rate:.0%}" for d, st in xp.by_difficulty.items() if st.rate is not None]
-        self.detail.config(text=f"Réussite : {' · '.join(rates) or '—'}   ·   sauvées par le 2e appui : {s.rescued}")
+        self.detail.config(text=f"Réussite : {' · '.join(rates) or '—'}   ·   sauvées en insistant : {s.rescued}")
 
     def hud_status(self) -> str:
         xp, timing = self.engine.xp, self.engine.timing

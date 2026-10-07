@@ -1,6 +1,6 @@
 import random
 
-from qte_bot.tracker import PressTracker
+from qte_bot.tracker import MAX_PRESSES, PressTracker
 
 FRAME = 0.03  # ~33 img/s
 
@@ -89,17 +89,22 @@ def test_progress_is_none_without_pending_press():
     assert make().progress(0.0) is None
 
 
-def make_repress(after_ms=150):
-    tracker = PressTracker(1, 3, rng=random.Random(0), repress_after_ms=after_ms)
-    tracker.set_delay(0, 0)
+def make_repress(after_ms=150, delay=(0, 0)):
+    tracker = PressTracker(1, 3, rng=random.Random(0), insist_every_ms=after_ms)
+    tracker.set_delay(*delay)
     return tracker
 
 
-def test_repress_once_if_box_still_visible():
-    # appui à t=0 ; case encore là à 0.15 s -> 2e appui ; jamais de 3e
+def test_insists_while_box_visible_every_150ms():
+    # appui à 0 ; case toujours là -> nouvel appui toutes les 150 ms (images de 30 ms)
     out = feed(make_repress(), ["w"] * 12)
-    assert out[0] == "w" and out.count("w") == 2
-    assert out.index("w", 1) * FRAME >= 0.150
+    times = [round(i * FRAME, 2) for i, k in enumerate(out) if k]
+    assert times == [0.0, 0.15, 0.3]
+
+
+def test_insist_is_capped():
+    out = feed(make_repress(), ["w"] * 60)
+    assert out.count("w") == MAX_PRESSES
 
 
 def test_no_repress_when_box_vanishes():
@@ -110,6 +115,41 @@ def test_no_repress_when_box_vanishes():
 def test_repress_disabled():
     out = feed(make_repress(after_ms=None), ["w"] * 12)
     assert out.count("w") == 1
+
+
+def unsure(tracker, guesses, score=0.42, start=0.0):
+    """Case visible, lettre jamais lue avec certitude : seule la meilleure supposition est connue."""
+    return [tracker.update(None, start + i * FRAME, visible=True, guess=g, guess_score=score)
+            for i, g in enumerate(guesses)]
+
+
+def test_fallback_presses_best_guess_when_never_sure():
+    # Raté du 20:14:51 : S jamais reconnu (score 0.42), case visible 686 ms -> on tente « s » et on insiste.
+    out = unsure(make_repress(delay=(200, 200)), ["s"] * 20)
+    assert out[0:6] == [None] * 6           # pas avant le délai (200 ms)
+    assert "s" in out and out.index("s") * FRAME >= 0.2
+    assert out.count("s") >= 2              # puis insiste tant que la case reste
+
+
+def test_fallback_needs_a_stable_guess():
+    out = unsure(make_repress(), ["s", "q", "a", "s", "q", "a", "z", "x"])
+    assert set(out) == {None}
+
+
+def test_fallback_ignores_absurd_scores():
+    out = unsure(make_repress(), ["s"] * 20, score=0.1)
+    assert set(out) == {None}
+
+
+def test_fallback_disabled_with_insist_off():
+    out = unsure(make_repress(after_ms=None), ["s"] * 20)
+    assert set(out) == {None}
+
+
+def test_sure_letter_overrides_a_wrong_fallback():
+    tracker = make_repress()
+    unsure(tracker, ["q"] * 4)                          # tente « q »
+    assert tracker.update("s", 4 * FRAME, visible=True) == "s"   # lecture certaine « s » : on corrige
 
 
 def test_repress_budget_resets_for_next_letter():

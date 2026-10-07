@@ -23,7 +23,7 @@ from qte_bot.tracker import PressTracker
 
 ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a pris la touche
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
-REPRESS_AFTER_MS = 150  # case encore là 150 ms après l'appui = pas prise : un 2e appui
+INSIST_EVERY_MS = 150  # case encore là après l'appui = pas prise : on réappuie à ce rythme (plafonné)
 MAX_UNSURE_GLYPHS = 200  # lettres douteuses gardées pour apprendre des variantes (≈100 octets chacune)
 UI_KEY_HOLD_MS = 150   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
 
@@ -47,7 +47,7 @@ class Stats:
             self.taken += 1
             if s.presses > 1:
                 self.rescued += 1
-                return "PRIS (2e)"
+                return "PRIS (insisté)"
             return "PRIS"
         self.ignored += 1
         return "IGNORÉ ?"
@@ -168,7 +168,7 @@ class Engine:
 
     def _new_tracker(self, repress: bool) -> PressTracker:
         return PressTracker(self.cfg.confirm_frames, self.cfg.release_frames,
-                            repress_after_ms=REPRESS_AFTER_MS if repress else None)
+                            insist_every_ms=INSIST_EVERY_MS if repress else None)
 
     def _require_io(self) -> GameIo:
         if self.io is None:
@@ -182,7 +182,8 @@ class Engine:
         foreground = self._game_in_front(io.foreground_process())
         prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side)
         match = self.recognizer.classify(prompt.glyph) if prompt else None
-        key = tracker.update(match.label if match else None, now, visible=prompt is not None)
+        key = tracker.update(match.label if match else None, now, visible=prompt is not None,
+                             guess=match.guess if match else None, guess_score=match.score if match else 0.0)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)
             io.press_key(key, timing.hold_ms)
         elif key:
