@@ -130,9 +130,9 @@ class Engine:
         with self._lock:
             self._hotkey_codes, self._rebuild = dict(codes), True
 
-    def _on_session(self, kind: str, difficulty: int, now: float) -> None:
+    def _on_session(self, kind: str, difficulty: int, now: float, activity: str = "combat") -> None:
         if kind == "start":
-            self.xp.start_session(difficulty, now)
+            self.xp.start_session(difficulty, now, activity)
             return
         ok = self.xp.end_session(now)
         self.emit(f"session {'RÉUSSIE' if ok else 'ratée'} · XP total {self.xp.total_xp}")
@@ -326,8 +326,7 @@ class Engine:
         """Méditation : un « épisode » = tout l'enchaînement. Pas de verdict IGNORÉ (la case reste toujours
         affichée), pas d'échec signalé à l'automate : la fin de session se fait au calme (2,5 s sans case)."""
         verdict = self.stats.record_chain(s.presses)
-        if s.presses:
-            self.xp.record_case("PRIS")
+        self.xp.record_chain(s.presses)
         if self.hud is not None:
             self.hud.result(self._screen_rect(s.snapshot.box), s.best.guess, verdict, time.perf_counter())
         line = f"{time.strftime('%H:%M:%S')} MÉDITATION  {s.presses} touches envoyées, case visible {s.visible_ms} ms"

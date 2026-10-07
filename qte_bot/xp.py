@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 
 
 XP_BY_DIFFICULTY = {1: 15, 2: 25, 3: 40, 4: 60, 5: 85}
+MEDITATION_MIN_SHARE = 0.7  # Méditation annulée au 1er raté : bien moins de touches que la meilleure = ratée
 TAKEN = "PRIS"
 
 
@@ -31,12 +32,16 @@ class XpTracker:
     _difficulty: int | None = None
     _taken: int = 0
     _failed: bool = False
+    _activity: str = "combat"
+    _chain_presses: int = 0
+    _best_meditation: dict[int, int] = field(default_factory=dict)  # difficulté -> plus grand nombre de touches
 
-    def start_session(self, difficulty: int, now: float) -> None:
+    def start_session(self, difficulty: int, now: float, activity: str = "combat") -> None:
         if difficulty not in XP_BY_DIFFICULTY:
             raise ValueError(f"difficulté inconnue : {difficulty}")
         self.started_at = now if self.started_at is None else self.started_at
         self._difficulty, self._taken, self._failed = difficulty, 0, False
+        self._activity, self._chain_presses = activity, 0
 
     def record_case(self, verdict: str) -> None:
         if self._difficulty is None:
@@ -46,12 +51,26 @@ class XpTracker:
         else:
             self._failed = True
 
+    def record_chain(self, presses: int) -> None:
+        """Méditation : touches envoyées pendant un enchaînement."""
+        if self._difficulty is not None:
+            self._chain_presses += presses
+
+    def _meditation_success(self, difficulty: int) -> bool:
+        best = self._best_meditation.get(difficulty)
+        presses = self._chain_presses
+        self._best_meditation[difficulty] = max(best or 0, presses)
+        return presses > 0 and (best is None or presses >= MEDITATION_MIN_SHARE * best)
+
     def end_session(self, now: float) -> bool | None:
         """True = réussie (XP ajoutée), False = ratée, None = aucune session en cours."""
         if self._difficulty is None:
             return None
         d, self._difficulty = self._difficulty, None
-        success = not self._failed and self._taken > 0  # le jeu arrête la session au 1er échec
+        if self._activity == "méditation" or self._chain_presses:  # enchaînement vu, même si le titre a été mal lu
+            success = self._meditation_success(d)
+        else:
+            success = not self._failed and self._taken > 0  # le jeu arrête la session au 1er échec
         stats = self.by_difficulty[d]
         if success:
             stats.ok += 1

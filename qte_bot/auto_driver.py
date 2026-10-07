@@ -19,7 +19,7 @@ Click = Callable[[int, int], None]
 
 class AutoDriver:
     def __init__(self, settings: AutoSettings, press: Press, click: Click, emit: Callable[[str], None],
-                 on_session: Callable[[str, int, float], None] | None = None):
+                 on_session: Callable[[str, int, float, str], None] | None = None):
         settings.validate()
         self._on_session = on_session
         self._lock = threading.Lock()

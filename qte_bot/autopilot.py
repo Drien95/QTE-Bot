@@ -81,7 +81,7 @@ class Autopilot:
     press: Callable[[str], None]
     click: Callable[[int, int], None]
     rng: random.Random = field(default_factory=random.Random)
-    on_session: Callable[[str, int, float], None] | None = None  # ("start"|"end", difficulté, instant)
+    on_session: Callable[[str, int, float, str], None] | None = None  # ("start"|"end", difficulté, instant, activité)
     state: State = State.IDLE
     reason: str = ""
     sessions_done: int = 0
@@ -197,7 +197,7 @@ class Autopilot:
         self.sessions_done += 1
         self._learn(self._session_difficulty)
         if self._session_difficulty is not None and self.on_session:
-            self.on_session("end", self._session_difficulty, o.now)
+            self.on_session("end", self._session_difficulty, o.now, self._activity)
         self._session_difficulty = None
         if self.sessions_done >= self.settings.max_sessions:
             return self._stop(f"limite de {self.settings.max_sessions} sessions atteinte")
@@ -250,7 +250,7 @@ class Autopilot:
         self._cases_taken, self._failed_at, self._had_failure = 0, None, False
         self._session_difficulty = self.last_difficulty if mine else None
         if self._session_difficulty is not None and self.on_session:
-            self.on_session("start", self._session_difficulty, now)
+            self.on_session("start", self._session_difficulty, now, self._activity)
 
     def _time_is_up(self, now: float) -> bool:
         limit = self.settings.max_minutes

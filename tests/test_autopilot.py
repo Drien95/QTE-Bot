@@ -170,7 +170,7 @@ def test_stops_after_max_minutes_but_never_mid_session():
 def test_session_callbacks_report_difficulty():
     events = []
     pilot, _ = make(difficulties=(4,))
-    pilot.on_session = lambda kind, diff, now: events.append((kind, diff))
+    pilot.on_session = lambda kind, diff, now, activity: events.append((kind, diff))
     run_session(pilot, 0.0)
     assert events == [("start", 4), ("end", 4)]
 
@@ -178,7 +178,7 @@ def test_session_callbacks_report_difficulty():
 def test_manual_session_has_no_callbacks():
     events = []
     pilot, _ = make()
-    pilot.on_session = lambda kind, diff, now: events.append(kind)
+    pilot.on_session = lambda kind, diff, now, activity: events.append(kind)
     pilot.step(obs(0.0, qte=True))
     pilot.step(obs(5.0))
     assert events == []

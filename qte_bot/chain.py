@@ -1,7 +1,8 @@
 """Méditation : une seule case qui ne disparaît pas, les touches s'y enchaînent sans pause.
 
 Règles (différentes du Combat, où une case = une touche) :
-- nouvelle lettre lue -> appui après le délai réglé, et au moins MIN_GAP après l'appui précédent ;
+- nouvelle lettre lue sur 2 images -> appui après le délai réglé, jamais avant ACCEPT_AFTER (le jeu ignore
+  un appui trop précoce) et au moins MIN_GAP après l'appui précédent ;
 - même lettre encore affichée -> nouvel appui seulement REPEAT_GAP après le dernier : assez long pour que la
   capture (1-2 images de retard) ait montré la touche suivante, donc jamais l'ancienne lettre sur la nouvelle
   case ; couvre aussi la lettre répétée (« a » puis « a ») et l'appui ignoré ;
@@ -12,6 +13,8 @@ from __future__ import annotations
 import random
 
 MIN_GAP_S = 0.08
+ACCEPT_AFTER_S = 0.10     # le jeu ignore un appui envoyé dès l'apparition de la lettre (même en Turbo)
+CONFIRM_FRAMES = 2        # nouvelle lettre lue sur 2 images : écarte les images de transition
 REPEAT_GAP_S = 0.25
 MAX_SAME_PRESSES = 8      # même lettre appuyée 8 fois d'affilée : le jeu ne prend plus, on arrête d'insister
 CONTINUITY_S = 0.15       # trou toléré (image ratée) ; entre deux cases de Combat il y a >= 0,3 s
@@ -43,10 +46,13 @@ class ChainTracker:
         if label is None:
             return None  # lettre douteuse sur cette image : on attend une lecture sûre
         if label != self._candidate:
-            self._candidate, self._due = label, now + self._delay()
+            self._candidate, self._streak = label, 1
+            self._due = now + max(ACCEPT_AFTER_S, self._delay())
+        else:
+            self._streak += 1
         since_last = now - self._last_at
         if label != self._last_key:
-            ready = now >= self._due and since_last >= MIN_GAP_S
+            ready = self._streak >= CONFIRM_FRAMES and now >= self._due and since_last >= MIN_GAP_S
         else:
             ready = since_last >= REPEAT_GAP_S and self._same_count < MAX_SAME_PRESSES
         if not ready:
@@ -73,6 +79,7 @@ class ChainTracker:
 
     def _reset(self) -> None:
         self._candidate: str | None = None
+        self._streak = 0
         self._due = 0.0
         self._last_key: str | None = None
         self._last_at = float("-inf")
