@@ -10,7 +10,8 @@ import numpy as np
 from qte_bot.autopilot import Autopilot, AutoSettings, Observation, State
 from qte_bot.screen_ui import find_difficulty_rows, katana_warning_visible
 
-UI_SCAN_PERIOD_S = 0.2  # menu et message katana : 5 analyses/s suffisent, inutile à chaque image
+UI_SCAN_PERIOD_S = 0.1  # menu et message katana : 10 analyses/s, et SEULEMENT avant l'entraînement
+SCAN_STATES = {State.IDLE, State.WAIT_MENU, State.WAIT_START}  # en entraînement / pause : inutile, CPU économisé
 
 Press = Callable[[str], None]
 Click = Callable[[int, int], None]
@@ -75,7 +76,9 @@ class AutoDriver:
             pilot = self._pilot
         if pilot is None:
             return
-        if now - self._last_scan >= UI_SCAN_PERIOD_S:
+        if pilot.state not in SCAN_STATES:
+            self._rows, self._katana = [], False
+        elif now - self._last_scan >= UI_SCAN_PERIOD_S:
             self._last_scan = now
             self._rows = [(x + origin[0], y + origin[1], w, h)
                           for x, y, w, h in find_difficulty_rows(cv2.cvtColor(bgra, cv2.COLOR_BGRA2BGR))]

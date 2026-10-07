@@ -54,7 +54,7 @@ class NoHotkeys:
 
 def fake_io(presses, foreground="gmod.exe"):
     return GameIo(make_grabber=lambda _roi: FakeScreen(seconds=1.2), make_hotkeys=NoHotkeys,
-                  press_key=lambda key, ms: presses.append(key), click_at=lambda x, y: presses.append(("click", x, y)),
+                  press_key=lambda key, ms: presses.append(key), click_at=lambda x, y, fast: presses.append(("click", x, y)),
                   foreground_process=lambda: foreground)
 
 

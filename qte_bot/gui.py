@@ -8,7 +8,7 @@ import tkinter as tk
 from pathlib import Path
 
 from qte_bot.autopilot import DIFFICULTY_NAMES, AutoSettings
-from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing
+from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing, save_turbo
 from qte_bot.engine import Engine, Timing
 from qte_bot.hud import HudFeed
 from qte_bot.keys import key_label, spec_from_event
@@ -39,6 +39,7 @@ class App:
         a = cfg.auto
         self.delay_min, self.delay_max = tk.IntVar(value=cfg.delay_min_ms), tk.IntVar(value=cfg.delay_max_ms)
         self.hold, self.repress = tk.IntVar(value=cfg.hold_ms), tk.BooleanVar(value=cfg.repress)
+        self.turbo = tk.BooleanVar(value=cfg.turbo)
         self.levels = {d: tk.BooleanVar(value=d in a.difficulties) for d in DIFFICULTY_NAMES}
         self.pause_min, self.pause_max = tk.IntVar(value=a.pause_min_s), tk.IntVar(value=a.pause_max_s)
         self.max_sessions, self.max_minutes = tk.IntVar(value=a.max_sessions), tk.IntVar(value=a.max_minutes)
@@ -111,6 +112,8 @@ class App:
         self._field(grid, 0, "Pause entre sessions (secondes)", (self.pause_min, self.pause_max), 0, 3600, 1, "auto")
         self._field(grid, 1, "Arrêt après … sessions", (self.max_sessions,), 1, 10000, 1, "auto")
         self._field(grid, 2, "Arrêt après … minutes (0 = jamais)", (self.max_minutes,), 0, 1440, 5, "auto")
+        w.check(box, "⚡ Turbo : clic plus vif sur la difficulté", self.turbo,
+                lambda: self._changed("auto")).pack(anchor="w", pady=(8, 0))
 
     def _qte_card(self, parent: tk.Frame) -> None:
         box = w.card(parent, "QTE")
@@ -184,6 +187,8 @@ class App:
         settings = self._auto_settings(interact_key)
         save_auto(self.config_path, settings)  # refuse aussi un conflit avec un raccourci
         self.engine.auto.configure(settings)
+        self.engine.set_turbo(self.turbo.get())
+        save_turbo(self.config_path, self.turbo.get())
         self.interact_key = settings.interact_key
 
     # ---------- raccourcis ----------

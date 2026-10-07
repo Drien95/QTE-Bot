@@ -121,8 +121,9 @@ INPUT_MOUSE = 0
 MOUSEEVENTF_MOVE, MOUSEEVENTF_ABSOLUTE = 0x0001, 0x8000
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
 SM_CXSCREEN, SM_CYSCREEN = 0, 1
-CLICK_HOLD_S = 0.12
-CLICK_SETTLE_S = 0.15  # le jeu relit la position du curseur à chaque image : on le laisse « voir » le curseur arriver
+# (approche, attente sur la cible, appui) en secondes. Le jeu relit la position du curseur à chaque image :
+# on le laisse « voir » le curseur arriver. Turbo : ~0.15 s au total au lieu de ~0.31 s.
+CLICK_TIMING = {False: (0.04, 0.15, 0.12), True: (0.02, 0.07, 0.06)}
 
 
 class _MOUSEINPUT(ctypes.Structure):
@@ -134,7 +135,7 @@ class _MOUSE_INPUT(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("mi", _MOUSEINPUT)]
 
 
-def click_at(x: int, y: int) -> None:
+def click_at(x: int, y: int, fast: bool = False) -> None:
     """Clic gauche à (x, y) en pixels de l'écran principal : déplacement absolu puis appui/relâche."""
     w, h = _user32.GetSystemMetrics(SM_CXSCREEN), _user32.GetSystemMetrics(SM_CYSCREEN)
     if not (0 <= x < w and 0 <= y < h):
@@ -144,13 +145,14 @@ def click_at(x: int, y: int) -> None:
 
     # Approche en deux temps (à côté puis dessus) : le jeu reçoit un vrai mouvement au-dessus de la cible.
     _send_mouse(*norm(max(0, x - 6), max(0, y - 3)), MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)
-    time.sleep(0.04)
+    approach_s, settle_s, hold_s = CLICK_TIMING[fast]
+    time.sleep(approach_s)
     nx, ny = norm(x, y)
     _send_mouse(nx, ny, MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE)
-    time.sleep(CLICK_SETTLE_S)
+    time.sleep(settle_s)
     _send_mouse(nx, ny, MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_ABSOLUTE)
     try:
-        time.sleep(CLICK_HOLD_S)
+        time.sleep(hold_s)
     finally:  # comme pour les touches : le bouton ne doit jamais rester enfoncé
         _send_mouse(nx, ny, MOUSEEVENTF_LEFTUP | MOUSEEVENTF_ABSOLUTE)
 

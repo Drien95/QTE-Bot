@@ -41,6 +41,7 @@ class Config:
     hotkeys: dict[str, int]  # action -> virtual-key code
     hotkey_names: dict[str, str]  # action -> nom écrit dans la config ("F7", "²", "P", "VK:118")
     repress: bool            # réappuyer une fois si la case reste affichée après l'appui
+    turbo: bool              # clic plus vif sur la difficulté
     game_process: str        # exécutable du jeu : aucune action si une autre fenêtre est active
     save_captures: bool      # image annotée de chaque case (diagnostic) ; désactivé par défaut
     auto: AutoSettings
@@ -64,6 +65,7 @@ def load_config(path: Path) -> Config:
         hotkeys={action: _vk(name) for action, name in _hotkey_names(raw).items()},
         hotkey_names=_hotkey_names(raw),
         repress=bool(raw.get("repress", True)),
+        turbo=bool(raw.get("turbo", False)),
         game_process=str(raw.get("game_process", "gmod.exe")).lower(),
         save_captures=bool(raw.get("save_captures", False)),
         auto=_auto(raw.get("auto", {})),
@@ -149,6 +151,10 @@ def save_hotkeys(path: Path, names: dict[str, str]) -> None:
 
 def save_repress(path: Path, enabled: bool) -> None:
     _save(path, repress=enabled)
+
+
+def save_turbo(path: Path, enabled: bool) -> None:
+    _save(path, turbo=enabled)
 
 
 def _save(path: Path, **changes) -> None:

@@ -82,6 +82,7 @@ class Engine:
         self.auto = AutoDriver(self.cfg.auto, self._auto_press, self._auto_click, self._emit_safe, self._on_session)
         self.xp = XpTracker()
         self._repress = self.cfg.repress
+        self._turbo = self.cfg.turbo
         self._hotkey_codes = dict(self.cfg.hotkeys)
         self._rebuild = True  # le moteur reconstruit tracker/raccourcis au prochain tour
     # --- pilotage (appelable depuis un autre thread) ---
@@ -93,6 +94,10 @@ class Engine:
     def set_repress(self, on: bool) -> None:
         with self._lock:
             self._repress, self._rebuild = on, True
+
+    def set_turbo(self, on: bool) -> None:
+        with self._lock:
+            self._turbo = on
 
     def set_hotkeys(self, codes: dict[str, int]) -> None:
         with self._lock:
@@ -136,7 +141,9 @@ class Engine:
         self.emit(f"auto : touche '{key.upper()}' envoyée ({UI_KEY_HOLD_MS} ms)")
 
     def _auto_click(self, x: int, y: int) -> None:
-        self._require_io().click_at(x, y)
+        with self._lock:
+            fast = self._turbo
+        self._require_io().click_at(x, y, fast)
         self.emit(f"auto : clic envoyé en ({x}, {y})")
 
     # --- boucle ---

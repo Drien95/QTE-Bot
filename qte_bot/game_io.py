@@ -28,5 +28,5 @@ class GameIo:
     make_grabber: Callable[[Roi], Grabber]
     make_hotkeys: Callable[[dict[str, int]], HotkeyPoller]
     press_key: Callable[[str, int], None]
-    click_at: Callable[[int, int], None]
+    click_at: Callable[[int, int, bool], None]  # (x, y, rapide)
     foreground_process: Callable[[], str]
