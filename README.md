@@ -70,6 +70,10 @@ ATTENTE ─E─► MENU (5 barres colorées) ─clic─► LANCEMENT ─1re case
 | Fin de session détectée | 2,5 s après la dernière case | immédiate (dès la dernière case annoncée) |
 | Clic sur la difficulté | 0,31 s | 0,16 s avec l'option ⚡ Turbo |
 
+**⚡ Turbo** (tuile du menu) : tout au minimum. Appui dès la 1re image lue puis toutes les 50 ms tant que
+la case reste (10 max), aucune pause entre sessions, menu cherché à chaque image, nouvel essai de E après
+0,7 s, clic rapide. Hors Turbo, les réglages de délai et de pause du joueur s'appliquent.
+
 Écran inchangé (DXGI) = dernière analyse réutilisée ; aucune case depuis 2 s = 30 analyses/s ;
 OpenCV en mono-thread (le multi-thread coûtait plus qu'il ne rapportait).
 La capture de **sous-région** de `dxcam` fait planter Python : on capture toujours tout l'écran et on découpe.
