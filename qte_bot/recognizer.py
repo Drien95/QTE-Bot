@@ -12,12 +12,15 @@ from qte_bot.detector import normalize_glyph
 
 FONT_CANDIDATES = ("arial.ttf", "segoeui.ttf", "DejaVuSans.ttf")
 FONT_RENDER_SIZE = 64
+SHIFT_PX = 2           # tolérance de décalage à taille réelle (lettre dessinée à cheval sur deux pixels)
+MAX_SIZE_GAP_PX = 3    # au-delà, tailles trop différentes pour comparer à taille réelle (capture redimensionnée)
 
 
 @dataclass(frozen=True)
 class Template:
     label: str
-    image: np.ndarray
+    image: np.ndarray              # normalisé GLYPH_SIZE² (comparaison quelle que soit l'échelle)
+    raw: np.ndarray | None = None  # taille réelle, pour les modèles capturés en jeu
 
 
 @dataclass(frozen=True)
@@ -36,11 +39,17 @@ class Recognizer:
         self._min_score = min_score
         self._min_margin = min_margin
 
-    def classify(self, glyph: np.ndarray) -> Match:
-        """Meilleur label si son score dépasse le seuil ET bat nettement la 2e lettre."""
+    def classify(self, glyph: np.ndarray, mask: np.ndarray | None = None) -> Match:
+        """Meilleur label si son score dépasse le seuil ET bat nettement la 2e lettre.
+
+        `glyph` : lettre normalisée ; `mask` : la même à taille réelle (optionnel) -> comparaison tolérante
+        aux décalages d'un ou deux pixels, que la normalisation amplifie (S décalé : 0.42 au lieu de 1.00).
+        """
         best: dict[str, float] = {}
         for t in self._templates:
             score = float(cv2.matchTemplate(glyph, t.image, cv2.TM_CCOEFF_NORMED)[0, 0])
+            if mask is not None and t.raw is not None:
+                score = max(score, shifted_score(mask, t.raw))
             best[t.label] = max(score, best.get(t.label, -1.0))
         ranked = sorted(best.items(), key=lambda kv: kv[1], reverse=True)
         label, score = ranked[0]
@@ -57,8 +66,21 @@ def load_templates(directory: Path, allowed: str) -> list[Template]:
         label = path.stem.split("_")[0].lower()
         image = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
         if len(label) == 1 and label in allowed and image is not None:
-            templates.append(Template(label, normalize_glyph(np.where(image >= 128, 255, 0).astype(np.uint8))))
+            binary = np.where(image >= 128, 255, 0).astype(np.uint8)
+            templates.append(Template(label, normalize_glyph(binary), raw=binary))
     return templates
+
+
+def shifted_score(mask: np.ndarray, raw: np.ndarray) -> float:
+    """Corrélation max en faisant glisser la plus petite image sur la plus grande (± SHIFT_PX), à taille réelle."""
+    if abs(mask.shape[0] - raw.shape[0]) > MAX_SIZE_GAP_PX or abs(mask.shape[1] - raw.shape[1]) > MAX_SIZE_GAP_PX:
+        return -1.0
+    big, small = (mask, raw) if mask.size >= raw.size else (raw, mask)
+    big = cv2.copyMakeBorder(big, SHIFT_PX, SHIFT_PX, SHIFT_PX, SHIFT_PX, cv2.BORDER_CONSTANT, value=0)
+    if small.shape[0] > big.shape[0] or small.shape[1] > big.shape[1]:
+        return -1.0
+    result = cv2.matchTemplate(big.astype(np.float32), small.astype(np.float32), cv2.TM_CCOEFF_NORMED)
+    return float(np.nan_to_num(result, nan=-1.0, posinf=-1.0, neginf=-1.0).max())
 
 
 def font_templates(allowed: str) -> list[Template]:

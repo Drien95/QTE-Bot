@@ -181,7 +181,7 @@ class Engine:
         now = time.perf_counter()
         foreground = self._game_in_front(io.foreground_process())
         prompt = find_prompt(gray, self.cfg.min_side, self.cfg.max_side)
-        match = self.recognizer.classify(prompt.glyph) if prompt else None
+        match = self.recognizer.classify(prompt.glyph, prompt.mask) if prompt else None
         key = tracker.update(match.label if match else None, now, visible=prompt is not None,
                              guess=match.guess if match else None, guess_score=match.score if match else 0.0)
         if key and foreground:  # jamais de touche dans une autre fenêtre (navigateur, visionneuse…)

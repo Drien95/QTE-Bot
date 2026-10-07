@@ -36,7 +36,7 @@ def run_on_image(cfg: Config, image_path: Path) -> int:
     if prompt is None:
         print("aucune case détectée")
         return 1
-    match = build_recognizer(cfg).classify(prompt.glyph)
+    match = build_recognizer(cfg).classify(prompt.glyph, prompt.mask)
     print(f"case {prompt.box} -> {match.label!r} (score {match.score:.2f})")
     return 0
 

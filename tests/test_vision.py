@@ -98,8 +98,10 @@ def test_game_templates_read_real_game_glyphs(path):
     from qte_bot.main import ROOT, build_recognizer
 
     recognizer = build_recognizer(load_config(ROOT / "config.json"))
-    match = recognizer.classify(normalize_glyph(cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)))
-    assert match.label == path.stem[0]
+    mask = np.where(cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) >= 128, 255, 0).astype(np.uint8)
+    match = recognizer.classify(normalize_glyph(mask), mask)
+    assert match.label == path.stem[0], f"lu {match.guess} score {match.score:.2f} marge {match.margin:.2f}"
+    assert match.score >= 0.85
 
 
 def test_all_allowed_letters_have_game_templates():
