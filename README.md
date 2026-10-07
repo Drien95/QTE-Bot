@@ -59,6 +59,21 @@ ATTENTE ─E─► MENU (5 barres colorées) ─clic─► LANCEMENT ─1re case
 ```
   Arrêt sur : message « katana », 3 échecs de suite, limite de sessions ou de minutes (jamais en pleine session).
 
+## Performances (1080p, mesurées)
+
+| | Avant | Maintenant |
+|---|---|---|
+| Capture d'une image | 23,5 ms (GDI) | ~2,4 ms (DXGI, repli GDI auto) |
+| Détection de la case | 11 ms | 4,1 ms (recherche sur masque ½) |
+| Images analysées/s | ~29–46 | ~60 (= rafraîchissement écran) |
+| CPU, aucune case à l'écran | ~141 % d'un cœur | ~22 % |
+| Fin de session détectée | 2,5 s après la dernière case | immédiate (dès la dernière case annoncée) |
+| Clic sur la difficulté | 0,31 s | 0,16 s avec l'option ⚡ Turbo |
+
+Écran inchangé (DXGI) = dernière analyse réutilisée ; aucune case depuis 2 s = 30 analyses/s ;
+OpenCV en mono-thread (le multi-thread coûtait plus qu'il ne rapportait).
+La capture de **sous-région** de `dxcam` fait planter Python : on capture toujours tout l'écran et on découpe.
+
 ## Sécurités
 
 - Aucune touche ni clic si `game_process` (`gmod.exe`) n'est pas au premier plan.
