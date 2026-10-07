@@ -1,23 +1,26 @@
-"""Menu de réglage (tkinter, inclus dans Python) : délai d'appui, durée d'appui, pause, bilan en direct."""
+"""Fenêtre principale : deux tuiles marche/arrêt, statistiques, réglages enregistrés automatiquement."""
 from __future__ import annotations
 
 import queue
-import time
 import threading
+import time
 import tkinter as tk
 from pathlib import Path
-from tkinter import ttk
 
 from qte_bot.autopilot import DIFFICULTY_NAMES, AutoSettings
-from qte_bot.config import Config, save_auto, save_timing
+from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing
 from qte_bot.engine import Engine, Timing
 from qte_bot.hud import HudFeed
-from qte_bot.textlog import append_line
+from qte_bot.keys import key_label, spec_from_event
 from qte_bot.recognizer import Recognizer
+from qte_bot.textlog import append_line
+from qte_bot.ui import theme as t
+from qte_bot.ui import widgets as w
 
 POLL_MS = 100
+SAVE_DEBOUNCE_MS = 500   # on enregistre 0,5 s après la dernière modification (pas à chaque flèche)
 MAX_LOG_LINES = 300
-SPIN = {"from_": 0, "to": 1000, "increment": 10, "width": 7}
+HOTKEY_ROWS = (("toggle", "QTE marche / pause"), ("auto", "Automatisation marche / arrêt"), ("quit", "Quitter le programme"))
 
 
 class App:
@@ -26,85 +29,260 @@ class App:
         self.events: queue.Queue[str] = queue.Queue()
         engine.emit = self._emit  # le moteur tourne dans un autre thread : passage par une file
         self._event_log = engine.captures_dir / "evenements.txt"
-        self.delay_min = tk.IntVar(value=cfg.delay_min_ms)
-        self.delay_max = tk.IntVar(value=cfg.delay_max_ms)
-        self.hold = tk.IntVar(value=cfg.hold_ms)
-        self.message = tk.StringVar()
-        self.stats = tk.StringVar()
-        self.hud_on = tk.BooleanVar(value=True)
+        self._init_vars(cfg)
+        self._pending: dict[str, str] = {}   # section -> identifiant du `after` d'enregistrement
+        self._capture: tuple[str, w.KeyButton] | None = None
         self.overlay = None  # branché par run_gui si l'affichage a pu être créé
         self._build()
 
+    def _init_vars(self, cfg: Config) -> None:
+        a = cfg.auto
+        self.delay_min, self.delay_max = tk.IntVar(value=cfg.delay_min_ms), tk.IntVar(value=cfg.delay_max_ms)
+        self.hold, self.repress = tk.IntVar(value=cfg.hold_ms), tk.BooleanVar(value=cfg.repress)
+        self.levels = {d: tk.BooleanVar(value=d in a.difficulties) for d in DIFFICULTY_NAMES}
+        self.pause_min, self.pause_max = tk.IntVar(value=a.pause_min_s), tk.IntVar(value=a.pause_max_s)
+        self.max_sessions, self.max_minutes = tk.IntVar(value=a.max_sessions), tk.IntVar(value=a.max_minutes)
+        self.interact_key = a.interact_key
+        self.hotkey_names = dict(cfg.hotkey_names)
+        self.hud_on = tk.BooleanVar(value=True)
+        self.status = tk.StringVar(value="Réglages enregistrés automatiquement")
+
+    # ---------- construction ----------
     def _build(self) -> None:
         self.root.title("QTE Bot")
-        frame = ttk.Frame(self.root, padding=12)
-        frame.grid(sticky="nsew")
-        self.state_btn = tk.Button(frame, font=("Segoe UI", 12, "bold"), width=22, command=self._toggle)
-        self.state_btn.grid(row=0, column=0, columnspan=4, pady=(0, 10))
-        ttk.Label(frame, text="Délai avant appui (ms, depuis l'apparition de la case)").grid(row=1, column=0, columnspan=4, sticky="w")
-        delays = ttk.Frame(frame)
-        delays.grid(row=2, column=0, columnspan=4, sticky="w", pady=2)
-        ttk.Label(delays, text="min").pack(side="left")
-        ttk.Spinbox(delays, textvariable=self.delay_min, **SPIN).pack(side="left", padx=(4, 16))
-        ttk.Label(delays, text="max").pack(side="left")
-        ttk.Spinbox(delays, textvariable=self.delay_max, **SPIN).pack(side="left", padx=4)
-        ttk.Label(frame, text="Tiré au hasard entre min et max. Une case reste ~600 ms à l'écran.",
-                  foreground="#666").grid(row=3, column=0, columnspan=4, sticky="w", pady=(0, 8))
-        hold = ttk.Frame(frame)
-        hold.grid(row=4, column=0, columnspan=4, sticky="w")
-        ttk.Label(hold, text="Durée d'appui (ms)").pack(side="left")
-        ttk.Spinbox(hold, textvariable=self.hold, from_=1, to=200, increment=10, width=7).pack(side="left", padx=4)
-        ttk.Button(frame, text="Appliquer et enregistrer", command=self._apply).grid(row=5, column=0, columnspan=2, pady=8, sticky="w")
-        ttk.Checkbutton(frame, text="Affichage HUD sur l'écran", variable=self.hud_on,
-                        command=self._toggle_hud).grid(row=5, column=2, columnspan=2, sticky="e")
-        ttk.Label(frame, textvariable=self.message).grid(row=6, column=0, columnspan=4)
-        ttk.Label(frame, textvariable=self.stats, font=("Segoe UI", 10, "bold")).grid(row=7, column=0, columnspan=4, pady=6)
-        self.auto_panel = AutoPanel(frame, self.engine, self.config_path, self.engine.cfg.auto)
-        self.auto_panel.grid(row=8, column=0, columnspan=4, sticky="ew", pady=(0, 8))
-        self.log = tk.Text(frame, height=12, width=88, font=("Consolas", 9), state="disabled")
-        self.log.grid(row=9, column=0, columnspan=4)
+        self.root.configure(bg=t.BG)
+        self.root.resizable(False, False)
+        body = tk.Frame(self.root, bg=t.BG, padx=16, pady=14)
+        body.pack(fill="both")
+        self._header(body)
+        self._tiles(body)
+        self._stats(body)
+        columns = tk.Frame(body, bg=t.BG)
+        columns.pack(fill="x")
+        left, right = tk.Frame(columns, bg=t.BG), tk.Frame(columns, bg=t.BG)
+        left.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        right.pack(side="left", fill="both", expand=True, padx=(5, 0))
+        self._auto_card(left)
+        self._qte_card(right)
+        self._keys_card(right)
+        self._footer(body)
         self._refresh()
+        self.root.after(50, lambda: _dark_title_bar(self.root))
+
+    def _header(self, parent: tk.Frame) -> None:
+        head = tk.Frame(parent, bg=t.BG)
+        head.pack(fill="x", pady=(0, 12))
+        tk.Label(head, text="◢ QTE·BOT", font=t.FONT_TITLE, fg=t.CYAN, bg=t.BG).pack(side="left")
+        tk.Label(head, text="Garry's Mod · entraînement", font=t.FONT_SMALL, fg=t.MUTED, bg=t.BG).pack(side="left", padx=10, pady=(6, 0))
+        w.check(head, "HUD", self.hud_on, self._toggle_hud).pack(side="right")
+
+    def _tiles(self, parent: tk.Frame) -> None:
+        row = tk.Frame(parent, bg=t.BG)
+        row.pack(fill="x", pady=(0, 10))
+        self.qte_tile = w.Tile(row, "QTE", self._toggle_qte)
+        self.auto_tile = w.Tile(row, "AUTOMATIQUE", self._toggle_auto)
+        self.qte_tile.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        self.auto_tile.pack(side="left", fill="x", expand=True, padx=(5, 0))
+        self.auto_state = w.label(parent, "", muted=True)
+        self.auto_state.configure(bg=t.BG)
+        self.auto_state.pack(anchor="w", pady=(0, 8))
+
+    def _stats(self, parent: tk.Frame) -> None:
+        box = w.card(parent, "Statistiques")
+        self.stat = {key: w.Stat(box, caption, color) for key, caption, color in (
+            ("xp", "XP gagnée", t.CYAN), ("xph", "XP / heure", t.CYAN),
+            ("sessions", "sessions réussies", t.GREEN), ("cases", "touches prises", t.GREEN))}
+        for i, s in enumerate(self.stat.values()):
+            s.grid(row=0, column=i, sticky="w", padx=(0, 22))
+        self.detail = w.label(box, "", muted=True)
+        self.detail.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+
+    def _auto_card(self, parent: tk.Frame) -> None:
+        box = w.card(parent, "Automatisation")
+        w.label(box, "Difficultés jouées (une au hasard à chaque session)", muted=True).pack(anchor="w")
+        chips = tk.Frame(box, bg=t.CARD)
+        chips.pack(anchor="w", pady=(4, 10))
+        self.chips = [w.Chip(chips, name, t.DIFFICULTY_COLORS[d], self.levels[d], lambda: self._changed("auto"))
+                      for d, name in DIFFICULTY_NAMES.items()]
+        for c in self.chips:
+            c.pack(side="left", padx=(0, 6))
+        grid = tk.Frame(box, bg=t.CARD)
+        grid.pack(anchor="w")
+        self._field(grid, 0, "Pause entre sessions (secondes)", (self.pause_min, self.pause_max), 0, 3600, 1, "auto")
+        self._field(grid, 1, "Arrêt après … sessions", (self.max_sessions,), 1, 10000, 1, "auto")
+        self._field(grid, 2, "Arrêt après … minutes (0 = jamais)", (self.max_minutes,), 0, 1440, 5, "auto")
+
+    def _qte_card(self, parent: tk.Frame) -> None:
+        box = w.card(parent, "QTE")
+        grid = tk.Frame(box, bg=t.CARD)
+        grid.pack(anchor="w")
+        self._field(grid, 0, "Délai avant l'appui (ms, min → max)", (self.delay_min, self.delay_max), 0, 1000, 10, "qte")
+        self._field(grid, 1, "Durée de l'appui (ms)", (self.hold,), 1, 200, 5, "qte")
+        w.check(box, "Réappuyer une fois si la touche n'est pas prise", self.repress,
+                lambda: self._changed("qte")).pack(anchor="w", pady=(6, 0))
+        w.label(box, "Conseil : délai min ≥ 120 ms, le jeu ignore les appuis trop rapides.", muted=True).pack(anchor="w", pady=(4, 0))
+
+    def _keys_card(self, parent: tk.Frame) -> None:
+        box = w.card(parent, "Touches  ·  clique puis appuie sur la touche voulue")
+        self.key_buttons: dict[str, w.KeyButton] = {}
+        rows = HOTKEY_ROWS + (("interact", "Touche « utiliser » du jeu"),)
+        for i, (action, text) in enumerate(rows):
+            w.label(box, text).grid(row=i, column=0, sticky="w", pady=2)
+            btn = w.KeyButton(box, lambda b, a=action: self._start_capture(a, b))
+            btn.grid(row=i, column=1, sticky="e", padx=(20, 0), pady=2)
+            self.key_buttons[action] = btn
+        self._show_keys()
+
+    def _footer(self, parent: tk.Frame) -> None:
+        self.status_label = tk.Label(parent, textvariable=self.status, font=t.FONT_SMALL, fg=t.MUTED, bg=t.BG)
+        self.status_label.pack(anchor="w")
+        toggle = tk.Label(parent, text="▸ Journal", font=t.FONT_SMALL, fg=t.CYAN, bg=t.BG, cursor="hand2")
+        toggle.pack(anchor="w", pady=(6, 0))
+        self.log = tk.Text(parent, height=8, width=110, font=t.FONT_MONO, bg=t.CARD, fg=t.MUTED,
+                           relief="flat", highlightthickness=0, state="disabled")
+        toggle.bind("<Button-1>", lambda _e: self._toggle_log(toggle))
+
+    def _field(self, grid: tk.Frame, row: int, text: str, variables: tuple, low: int, high: int, step: int, section: str) -> None:
+        w.label(grid, text).grid(row=row, column=0, sticky="w", pady=3)
+        cell = tk.Frame(grid, bg=t.CARD)
+        cell.grid(row=row, column=1, sticky="w", padx=(16, 0))
+        for i, var in enumerate(variables):
+            if i:
+                w.label(cell, "→", muted=True).pack(side="left", padx=4)
+            w.number(cell, var, low, high, step).pack(side="left")
+            var.trace_add("write", lambda *_: self._changed(section))
+
+    # ---------- enregistrement automatique ----------
+    def _changed(self, section: str) -> None:
+        if section in self._pending:
+            self.root.after_cancel(self._pending[section])
+        self._pending[section] = self.root.after(SAVE_DEBOUNCE_MS, lambda: self._commit(section))
+
+    def _commit(self, section: str) -> None:
+        self._pending.pop(section, None)
+        try:
+            {"qte": self._commit_qte, "auto": self._commit_auto}[section]()
+        except (ValueError, tk.TclError) as exc:
+            return self._say(f"⚠ Non enregistré : {exc}", t.RED)
+        self._say("✓ Enregistré", t.GREEN)
+
+    def _commit_qte(self) -> None:
+        timing = Timing(self.delay_min.get(), self.delay_max.get(), self.hold.get())
+        self.engine.set_timing(timing)  # valide les bornes avant tout enregistrement
+        save_timing(self.config_path, timing.delay_min_ms, timing.delay_max_ms, timing.hold_ms)
+        self.engine.set_repress(self.repress.get())
+        save_repress(self.config_path, self.repress.get())
+
+    def _auto_settings(self, interact_key: str | None = None) -> AutoSettings:
+        settings = AutoSettings({d for d, v in self.levels.items() if v.get()}, self.pause_min.get(),
+                                self.pause_max.get(), self.max_sessions.get(), self.max_minutes.get(),
+                                interact_key or self.interact_key)
+        settings.validate()
+        return settings
+
+    def _commit_auto(self, interact_key: str | None = None) -> None:
+        settings = self._auto_settings(interact_key)
+        save_auto(self.config_path, settings)  # refuse aussi un conflit avec un raccourci
+        self.engine.auto.configure(settings)
+        self.interact_key = settings.interact_key
+
+    # ---------- raccourcis ----------
+    def _start_capture(self, action: str, button: w.KeyButton) -> None:
+        self._capture = (action, button)
+        button.show("", waiting=True)
+        self.root.bind("<KeyPress>", self._on_key)
+        self.root.focus_force()
+
+    def _on_key(self, event: tk.Event) -> None:
+        self.root.unbind("<KeyPress>")
+        action, _ = self._capture
+        self._capture = None
+        if event.keysym != "Escape":
+            spec = spec_from_event(event.keysym, event.keycode, event.char)
+            try:
+                self._apply_key(action, spec)
+                self._say(f"✓ {key_label(spec)} enregistré", t.GREEN)
+            except ValueError as exc:
+                self._say(f"⚠ Refusé : {exc}", t.RED)
+        self._show_keys()
+
+    def _apply_key(self, action: str, spec: str) -> None:
+        if action == "interact":
+            if len(spec) != 1:
+                raise ValueError("la touche « utiliser » doit être une lettre ou un chiffre")
+            return self._commit_auto(spec.lower())
+        names = self.hotkey_names | {action: spec}
+        save_hotkeys(self.config_path, names)  # valide : touches distinctes, pas une lettre que le bot tape
+        self.hotkey_names = names
+        self.engine.set_hotkeys(load_config(self.config_path).hotkeys)
+
+    def _show_keys(self) -> None:
+        for action, btn in self.key_buttons.items():
+            btn.show(self.interact_key.upper() if action == "interact" else key_label(self.hotkey_names[action]))
+
+    # ---------- actions ----------
+    def _toggle_qte(self) -> None:
+        self.engine.toggle()
+
+    def _toggle_auto(self) -> None:
+        if not self.engine.auto.enabled:
+            try:
+                self._commit_auto()  # n'active jamais avec des réglages invalides
+            except ValueError as exc:
+                return self._say(f"⚠ {exc}", t.RED)
+        self.engine.auto.toggle()
+
+    def _toggle_hud(self) -> None:
+        if self.overlay is not None:
+            self.overlay.set_visible(self.hud_on.get())
+
+    def _toggle_log(self, toggle: tk.Label) -> None:
+        if self.log.winfo_ismapped():
+            self.log.pack_forget()
+            toggle.config(text="▸ Journal")
+        else:
+            self.log.pack(fill="x", pady=(4, 0))
+            toggle.config(text="▾ Journal")
+
+    def _say(self, text: str, color: str) -> None:
+        self.status.set(text)
+        self.status_label.config(fg=color)
+
+    # ---------- rafraîchissement ----------
+    def _refresh(self) -> None:
+        names = self.hotkey_names
+        qte_on, auto_on = self.engine.enabled, self.engine.auto.enabled
+        self.qte_tile.show(qte_on, "actifs" if qte_on else "en pause", key_label(names["toggle"]))
+        self.auto_tile.show(auto_on, "en marche" if auto_on else "arrêtée", key_label(names["auto"]), t.CYAN)
+        self.auto_state.config(text=f"Automatisation : {self.engine.auto.status}")
+        self._refresh_stats()
+
+    def _refresh_stats(self) -> None:
+        xp, s = self.engine.xp, self.engine.stats
+        ok = sum(d.ok for d in xp.by_difficulty.values())
+        failed = sum(d.failed for d in xp.by_difficulty.values())
+        self.stat["xp"].set(str(xp.total_xp))
+        self.stat["xph"].set(f"{xp.xp_per_hour(time.perf_counter()):.0f}")
+        self.stat["sessions"].set(f"{ok}/{ok + failed}")
+        self.stat["cases"].set(f"{s.taken}/{s.cases}")
+        rates = [f"{DIFFICULTY_NAMES[d]} {st.rate:.0%}" for d, st in xp.by_difficulty.items() if st.rate is not None]
+        self.detail.config(text=f"Réussite : {' · '.join(rates) or '—'}   ·   sauvées par le 2e appui : {s.rescued}")
+
+    def hud_status(self) -> str:
+        xp, timing = self.engine.xp, self.engine.timing
+        return (f"◢ QTE·BOT  {'ACTIF' if self.engine.enabled else 'PAUSE'}\n"
+                f"  délai {timing.delay_min_ms}–{timing.delay_max_ms} ms\n"
+                f"  XP {xp.total_xp} · {xp.xp_per_hour(time.perf_counter()):.0f}/h\n"
+                f"  auto : {self.engine.auto.status}")
 
     def _emit(self, line: str) -> None:
-        """Affiché dans le panneau ET gardé sur disque (horodaté à la ms) pour diagnostiquer après coup."""
+        """Affiché dans le journal ET gardé sur disque (horodaté à la ms) pour diagnostiquer après coup."""
         self.events.put(line)
         stamp = time.strftime("%H:%M:%S") + f".{int(time.time() * 1000) % 1000:03d}"
         try:
             append_line(self._event_log, f"{stamp} {line}")
         except OSError as exc:  # disque plein / verrouillé : on le dit, sans bloquer le moteur
             self.events.put(f"(journal non écrit : {exc})")
-
-    def _apply(self) -> None:
-        try:
-            timing = Timing(self.delay_min.get(), self.delay_max.get(), self.hold.get())
-            self.engine.set_timing(timing)  # valide (min <= max, bornes) avant d'appliquer
-            save_timing(self.config_path, timing.delay_min_ms, timing.delay_max_ms, timing.hold_ms)
-        except (ValueError, tk.TclError) as exc:
-            self.message.set(f"Refusé : {exc}")
-            return
-        self.message.set(f"Appliqué : appui entre {timing.delay_min_ms} et {timing.delay_max_ms} ms, maintenu {timing.hold_ms} ms")
-
-    def _toggle_hud(self) -> None:
-        if self.overlay is not None:
-            self.overlay.set_visible(self.hud_on.get())
-
-    def hud_status(self) -> str:
-        s, t = self.engine.stats, self.engine.timing
-        state = "ACTIF" if self.engine.enabled else "PAUSE"
-        return (f"◢ QTE·BOT  {state}\n  délai {t.delay_min_ms}–{t.delay_max_ms} ms\n"
-                f"  pris {s.taken} · ignorés {s.ignored} · sans appui {s.missed}\n"
-                f"  auto : {self.engine.auto.status}")
-
-    def _toggle(self) -> None:
-        self.events.put("ACTIF" if self.engine.toggle() else "EN PAUSE")
-
-    def _refresh(self) -> None:
-        on = self.engine.enabled
-        self.state_btn.config(text="ACTIF  (² pour pause)" if on else "EN PAUSE  (² pour reprendre)",
-                              bg="#2e7d32" if on else "#757575", fg="white", activebackground="#1b5e20")
-        self.auto_panel.refresh()
-        s = self.engine.stats
-        self.stats.set(f"Cases : {s.cases}   Pris : {s.taken}   Ignorés : {s.ignored}   Pas d'appui : {s.missed}")
 
     def poll(self) -> None:
         lines = []
@@ -118,66 +296,6 @@ class App:
             self.log.config(state="disabled")
         self._refresh()
         self.root.after(POLL_MS, self.poll)
-
-
-class AutoPanel(ttk.LabelFrame):
-    """Automatisation : E -> menu -> difficulté au hasard parmi les cochées -> QTE -> pause -> recommence."""
-
-    def __init__(self, parent: tk.Widget, engine: Engine, config_path: Path, auto: AutoSettings):
-        super().__init__(parent, text=" Automatisation de l'entraînement ", padding=8)
-        self.engine, self.config_path = engine, config_path
-        self.on = tk.BooleanVar(value=False)  # toujours désactivée au lancement : activation volontaire
-        self.levels = {d: tk.BooleanVar(value=d in auto.difficulties) for d in DIFFICULTY_NAMES}
-        self.pause_min = tk.IntVar(value=auto.pause_min_s)
-        self.pause_max = tk.IntVar(value=auto.pause_max_s)
-        self.max_sessions = tk.IntVar(value=auto.max_sessions)
-        self.status = tk.StringVar()
-        self.message = tk.StringVar()
-        self._build()
-
-    def _build(self) -> None:
-        ttk.Checkbutton(self, text="Activer (reste dans le cercle, katana en main)", variable=self.on,
-                        command=self._toggle).grid(row=0, column=0, columnspan=5, sticky="w")
-        ttk.Label(self, text="Difficultés (une tirée au hasard à chaque session) :").grid(row=1, column=0, columnspan=5, sticky="w", pady=(6, 0))
-        for i, (d, name) in enumerate(DIFFICULTY_NAMES.items()):
-            ttk.Checkbutton(self, text=f"{d} {name}", variable=self.levels[d]).grid(row=2, column=i, sticky="w", padx=(0, 6))
-        row = ttk.Frame(self)
-        row.grid(row=3, column=0, columnspan=5, sticky="w", pady=6)
-        ttk.Label(row, text="Pause entre sessions, en secondes : min").pack(side="left")
-        ttk.Spinbox(row, textvariable=self.pause_min, from_=0, to=3600, increment=1, width=6).pack(side="left", padx=(4, 8))
-        ttk.Label(row, text="max").pack(side="left")
-        ttk.Spinbox(row, textvariable=self.pause_max, from_=0, to=3600, increment=1, width=6).pack(side="left", padx=(4, 16))
-        ttk.Label(row, text="Sessions max").pack(side="left")
-        ttk.Spinbox(row, textvariable=self.max_sessions, from_=1, to=10000, width=6).pack(side="left", padx=4)
-        ttk.Button(self, text="Appliquer et enregistrer", command=self._apply).grid(row=4, column=0, columnspan=2, sticky="w")
-        ttk.Label(self, textvariable=self.message).grid(row=4, column=2, columnspan=3, sticky="w")
-        ttk.Label(self, textvariable=self.status, font=("Segoe UI", 9, "bold")).grid(row=5, column=0, columnspan=5, sticky="w", pady=(6, 0))
-
-    def _settings(self) -> AutoSettings:
-        settings = AutoSettings({d for d, v in self.levels.items() if v.get()},
-                                self.pause_min.get(), self.pause_max.get(), self.max_sessions.get())
-        settings.validate()
-        return settings
-
-    def _apply(self) -> bool:
-        try:
-            settings = self._settings()
-            self.engine.auto.configure(settings)
-            save_auto(self.config_path, settings)
-        except (ValueError, tk.TclError) as exc:
-            self.message.set(f"Refusé : {exc}")
-            return False
-        self.message.set("Enregistré")
-        return True
-
-    def _toggle(self) -> None:
-        if self.on.get() and not self._apply():  # réglages invalides : on n'active pas
-            self.on.set(False)
-            return
-        self.engine.auto.set_enabled(self.on.get())
-
-    def refresh(self) -> None:
-        self.status.set(f"État : {self.engine.auto.status}")
 
 
 def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir: Path) -> int:
@@ -198,9 +316,9 @@ def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir
     def watch_engine() -> None:
         if worker.is_alive():
             root.after(300, watch_engine)
-        elif engine.stopped:  # F10 : arrêt demandé -> on ferme
+        elif engine.stopped:  # touche « quitter » : arrêt demandé -> on ferme
             close()
-        # sinon le moteur a planté : la fenêtre reste ouverte avec l'erreur affichée
+        # sinon le moteur a planté : la fenêtre reste ouverte avec l'erreur dans le journal
 
     root.protocol("WM_DELETE_WINDOW", close)
     app.poll()
@@ -212,7 +330,7 @@ def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir
 def _run_engine(engine: Engine, events: queue.Queue[str]) -> None:
     try:
         engine.run()
-    except Exception as exc:  # affichée dans le menu au lieu de mourir en silence
+    except Exception as exc:  # affichée dans le journal au lieu de mourir en silence
         events.put(f"ERREUR moteur : {type(exc).__name__}: {exc}")
         raise
 
@@ -227,6 +345,16 @@ def _start_overlay(root: tk.Tk, cfg: Config, feed: HudFeed, app: App):
         app.events.put(f"Affichage HUD désactivé : {exc}")
         app.hud_on.set(False)
         return None
+
+
+def _dark_title_bar(root: tk.Tk) -> None:
+    """Barre de titre sombre (Windows 10 20H1+ / 11) ; sans effet ailleurs."""
+    import ctypes
+
+    DWMWA_USE_IMMERSIVE_DARK_MODE = 20
+    hwnd = ctypes.windll.user32.GetParent(root.winfo_id())
+    on = ctypes.c_int(1)
+    ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ctypes.byref(on), ctypes.sizeof(on))
 
 
 def _dpi_aware() -> None:
