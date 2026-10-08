@@ -20,7 +20,7 @@ from qte_bot.hud import HudFeed, Phase
 from qte_bot.recognizer import Recognizer
 from qte_bot.textlog import append_line
 from qte_bot.xp import XpTracker
-from qte_bot.tracker import PressTracker
+from qte_bot.tracker import MAX_PRESSES, PressTracker
 
 ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a pris la touche
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
@@ -30,8 +30,22 @@ OPENCV_THREADS = 1       # mesuré : 1 thread = 60 % d'un cœur, multi-thread = 
 CALM_AFTER_S = 2.0        # aucune case depuis 2 s : on analyse moins souvent…
 CALM_PERIOD_S = 1 / 30    # …30 images/s (au pire +16 ms pour voir la 1re case, fenêtre de 500 ms)
 UI_KEY_HOLD_MS = 150
-# ⚡ Turbo : tout au minimum. Appui dès la 1re image lue, puis toutes les 50 ms tant que la case reste (10 max).
-TURBO_INSIST_MS, TURBO_MAX_PRESSES, TURBO_E_HOLD_MS = 50, 10, 100   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
+# ⚡ Turbo : tout au minimum. Appui dès la 1re image lue, puis réappui dès que possible tant que la case reste.
+TURBO_E_HOLD_MS = 100   # E d'interaction : un appui de 25 ms (réglage QTE) peut passer entre deux ticks serveur
+# Entre deux appuis, la touche doit rester relâchée assez longtemps pour que le jeu (qui lit l'état des touches
+# par tick) voie le relâchement ; sinon il croit la touche tenue et ne compte aucun nouvel appui.
+# Mesuré le 08/10 : relâchée ~5 ms (appui 45 ms toutes les 50 ms) -> cases expirées en série.
+MIN_RELEASE_MS = 50
+BOX_LIFETIME_MS = 700   # case sans bonne touche : disparaît après ~650-780 ms (« PAS D'APPUI … visible »)
+
+
+def insist_plan(hold_ms: int, turbo: bool) -> tuple[int, int]:
+    """(intervalle entre deux appuis en ms, nombre max d'appuis par case). L'intervalle se compte depuis le
+    DÉBUT de l'appui : il inclut le temps où la touche est tenue, d'où hold_ms + MIN_RELEASE_MS au minimum."""
+    if not turbo:
+        return max(INSIST_EVERY_MS, hold_ms + MIN_RELEASE_MS), MAX_PRESSES
+    every_ms = hold_ms + MIN_RELEASE_MS
+    return every_ms, 1 + BOX_LIFETIME_MS // every_ms  # on insiste pendant toute la vie de la case
 
 Emit = Callable[[str], None]
 
@@ -202,11 +216,11 @@ class Engine:
             time.sleep(max(0.0, period - (time.perf_counter() - start)))
 
     def _new_tracker(self, repress: bool, turbo: bool) -> PressTracker:
+        every_ms, max_presses = insist_plan(self.cfg.hold_ms, turbo)
         if turbo:  # confirmation sur 1 image (lecture fiable à ~1.00), insistance serrée
-            return PressTracker(1, self.cfg.release_frames, insist_every_ms=TURBO_INSIST_MS,
-                                max_presses=TURBO_MAX_PRESSES)
+            return PressTracker(1, self.cfg.release_frames, insist_every_ms=every_ms, max_presses=max_presses)
         return PressTracker(self.cfg.confirm_frames, self.cfg.release_frames,
-                            insist_every_ms=INSIST_EVERY_MS if repress else None)
+                            insist_every_ms=every_ms if repress else None, max_presses=max_presses)
 
     def _require_io(self) -> GameIo:
         if self.io is None:

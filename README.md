@@ -3,11 +3,11 @@
 Bot Windows pour les QTE de l'entraînement (Combat et Méditation) sur Garry's Mod, serveur EVO Bleach RP :
 détecte la case à l'écran, lit la lettre, appuie sur la touche ; peut enchaîner les sessions d'entraînement seul.
 
-Version actuelle : **1.0.0** (affichée en haut du menu).
+Version actuelle : **1.0.1** (affichée en haut du menu).
 
 ## Pour jouer (2 minutes)
 
-1. Double-clique sur **`QTE-Bot-Setup-1.0.0.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
+1. Double-clique sur **`QTE-Bot-Setup-1.0.1.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
    pas de Python à installer. Raccourcis créés dans le menu Démarrer (et sur le Bureau si coché).
    Si Windows affiche « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même*
    (le programme n'est pas signé, c'est normal).
@@ -84,8 +84,10 @@ ATTENTE ─E─► MENU (5 barres colorées) ─clic─► LANCEMENT ─1re case
 | Fin de session détectée | 2,5 s après la dernière case | immédiate (dès la dernière case annoncée) |
 | Clic sur la difficulté | 0,31 s | 0,16 s avec l'option ⚡ Turbo |
 
-**⚡ Turbo** (tuile du menu) : tout au minimum. Appui dès la 1re image lue puis toutes les 50 ms tant que
-la case reste (10 max), aucune pause entre sessions, menu cherché à chaque image, nouvel essai de E après
+**⚡ Turbo** (tuile du menu) : tout au minimum. Appui dès la 1re image lue puis toutes les ~95 ms tant que
+la case reste (toute sa durée de vie, ~700 ms). Pas plus vite : entre deux appuis la touche doit rester
+**relâchée ≥ 50 ms**, sinon le jeu (qui lit l'état des touches par tick) croit qu'elle est tenue et ne compte
+aucun nouvel appui — c'est ce qui faisait expirer des cases avec l'ancien rythme de 50 ms ; aucune pause entre sessions, menu cherché à chaque image, nouvel essai de E après
 0,7 s, clic rapide. Hors Turbo, les réglages de délai et de pause du joueur s'appliquent.
 
 Écran inchangé (DXGI) = dernière analyse réutilisée ; aucune case depuis 2 s = 30 analyses/s ;

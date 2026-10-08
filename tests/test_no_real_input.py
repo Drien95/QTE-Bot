@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from qte_bot.config import load_config
-from qte_bot.engine import Engine
+from qte_bot.engine import Engine, insist_plan
 from qte_bot.game_io import GameIo
 from qte_bot.main import ROOT, build_recognizer
 
@@ -150,7 +150,8 @@ def test_turbo_hammers_until_cap(cfg):
     engine = Engine(cfg, build_recognizer(cfg), Path(tempfile.mkdtemp()), emit=lambda _l: None, io=fake_io(presses))
     engine.set_turbo(True)
     run_briefly(engine)                         # case visible 1,2 s, jamais « prise » (écran simulé)
-    assert presses.count("e") == 10            # bourrine au plafond, pas au-delà
+    _, cap = insist_plan(cfg.hold_ms, turbo=True)
+    assert presses.count("e") == cap           # bourrine au plafond, pas au-delà
 
 
 class MeditationScreen:
