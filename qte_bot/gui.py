@@ -7,6 +7,7 @@ import time
 import tkinter as tk
 from pathlib import Path
 
+from qte_bot import __version__
 from qte_bot.autopilot import DIFFICULTY_NAMES, AutoSettings
 from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing, save_turbo
 from qte_bot.engine import Engine, Timing
@@ -73,7 +74,7 @@ class App:
         head = tk.Frame(parent, bg=t.BG)
         head.pack(fill="x", pady=(0, 12))
         tk.Label(head, text="◢ QTE·BOT", font=t.FONT_TITLE, fg=t.CYAN, bg=t.BG).pack(side="left")
-        tk.Label(head, text="Garry's Mod · entraînement", font=t.FONT_SMALL, fg=t.MUTED, bg=t.BG).pack(side="left", padx=10, pady=(6, 0))
+        tk.Label(head, text=f"Garry's Mod · entraînement · v{__version__}", font=t.FONT_SMALL, fg=t.MUTED, bg=t.BG).pack(side="left", padx=10, pady=(6, 0))
         w.check(head, "HUD", self.hud_on, self._toggle_hud).pack(side="right")
 
     def _tiles(self, parent: tk.Frame) -> None:

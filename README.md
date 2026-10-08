@@ -1,7 +1,9 @@
 # QTE-Bot
 
-Bot Windows pour les QTE de l'entraînement au combat (Garry's Mod, serveur EVO Bleach RP) :
+Bot Windows pour les QTE de l'entraînement (Combat et Méditation) sur Garry's Mod, serveur EVO Bleach RP :
 détecte la case à l'écran, lit la lettre, appuie sur la touche ; peut enchaîner les sessions d'entraînement seul.
+
+Version actuelle : **1.0.0** (affichée en haut du menu).
 
 ## Pour jouer (2 minutes)
 
@@ -11,14 +13,14 @@ détecte la case à l'écran, lit la lettre, appuie sur la touche ; peut enchaî
 2. Mets Garry's Mod en **fenêtré sans bordure**, sur ton **écran principal**.
 3. Dans le menu :
    - **Tuile QTE** (verte = allumée) : le bot appuie seul sur les touches des QTE. Touche **²** = pause.
-   - **Tuile AUTOMATIQUE** : place-toi dans le cercle, katana en main, puis clique (ou **F7**).
+   - **Tuile AUTOMATIQUE** : place-toi dans le cercle (katana en main pour le Combat), puis clique (ou **F7**).
      Le bot fait tout : E, choix de la difficulté, QTE, pause, et il recommence.
    - Clique sur les **pastilles colorées** pour choisir les difficultés jouées.
    - Carte **Touches** : clique sur une touche puis appuie sur celle que tu veux.
 4. Fermer la fenêtre (ou **F10**) arrête tout. Tout réglage est enregistré automatiquement.
 
-Le bot n'agit **que** si Garry's Mod est la fenêtre active, et s'arrête seul si le katana n'est pas en main,
-si tu sors du cercle, ou à la limite de sessions/minutes.
+Le bot n'agit **que** si Garry's Mod est la fenêtre active, et s'arrête seul si le katana n'est pas en main
+(Combat), si tu sors du cercle, ou à la limite de sessions/minutes.
 En cas de souci : `qte_bot.log` et `captures/evenements.txt` disent ce que le bot a vu et fait.
 
 > Automatiser un jeu en ligne est souvent interdit par le règlement des serveurs : vérifie le tien,
@@ -39,7 +41,7 @@ Options de `run.bat` : `--console` (sans menu), `--image <png>` (tester la déte
 ## Fonctionnement
 
 ```
-capture écran (mss, ~37 img/s) ─► détection de la case ─► lecture de la lettre ─► décision d'appui ─► SendInput
+capture écran (DXGI, ~60 img/s) ─► détection de la case ─► lecture de la lettre ─► décision d'appui ─► SendInput
                                     zone sombre fermée       comparaison aux        délai aléatoire,
                                     par un trait clair       modèles du jeu          réappui unique
 ```
@@ -49,7 +51,8 @@ capture écran (mss, ~37 img/s) ─► détection de la case ─► lecture de l
 - **Lecture** (`recognizer.py`) : corrélation avec les lettres réelles du jeu (`templates/*.png`), dessinées au
   pixel près identiques à chaque fois → score ≈ 1,00. Refus si score < 0,75 ou marge trop faible.
 - **Appui** (`tracker.py`, `io_win.py`) : scancode selon la disposition **active** (AZERTY : `a` → touche A),
-  délai tiré dans [min, max] depuis la 1re apparition, réappui unique si la case reste 150 ms après.
+  délai tiré dans [min, max] depuis la 1re apparition, réappui toutes les 150 ms si la case reste.
+  Méditation : `chain.py` (voir plus bas).
 - **Automatisation** (`autopilot.py`) : automate « agir puis vérifier ».
 
 ```
@@ -85,11 +88,18 @@ Même menu et même procédé (E, difficulté, QTE), mais **pas le même exercic
 | | Combat | Méditation |
 |---|---|---|
 | Cases | une case = une touche, puis elle disparaît | une seule case, les touches s'y **enchaînent** sans pause |
+| 1er appui | après le délai réglé (dès la 1re image en Turbo) | jamais avant **100 ms**, lettre lue sur **2 images** |
 | Insistance | réappui rapide (50 ms en Turbo) si la case reste | **jamais rapide** : même lettre réappuyée seulement 250 ms après |
+| Raté | la session s'arrête | la Méditation est annulée |
 | Épée | katana en main obligatoire | non |
 
-En Méditation, un réappui rapide taperait l'ancienne lettre sur la case suivante (la capture a 1-2 images
-de retard) : c'est ce qui faisait échouer. Le mode « enchaînement » (`chain.py`) s'active par le titre du
+En Méditation, chaque lettre doit recevoir **une seule** touche, au bon moment :
+- le jeu ignore un appui envoyé dès l'apparition de la lettre → on attend 100 ms, même en Turbo ;
+- entre deux lettres, une image de transition peut montrer une lettre fausse → une nouvelle lettre doit être
+  lue sur 2 images consécutives ;
+- un réappui rapide taperait l'ancienne lettre sur la case suivante (la capture a 1-2 images de retard).
+
+Chaque appui est noté dans `captures/evenements.txt` (« appui 'A' (lu a 0.99) »). Le mode « enchaînement » (`chain.py`) s'active par le titre du
 menu (automatisation) ou dès que la lettre change sans que la case disparaisse ; il reste actif d'une session
 à l'autre et ne revient au Combat que sur une signature de Combat (case disparue puis nouvelle case < 2 s).
 
@@ -122,7 +132,12 @@ Tout se règle depuis le menu (enregistrement automatique). Champs avancés, à 
 
 - Écran **principal** en **1080p** : la zone du message « katana » est en coordonnées 1080p.
 - Jeu en fenêtré sans bordure (le HUD ne passe pas au-dessus d'un plein écran exclusif).
-- XP comptée pour toute session **sans case ratée** (le jeu arrête la session au 1er échec).
+- XP **Combat** comptée pour toute session **sans case ratée** (le jeu arrête la session au 1er échec).
+- XP **Méditation** : *estimation*. Le jeu ne montre pas de compteur de cases ; une Méditation est comptée
+  réussie si elle a reçu au moins 70 % des touches de la meilleure Méditation à la même difficulté
+  (la 1re sert de référence). Une Méditation annulée s'arrête après 1-2 touches, une normale en compte ~20.
+- Méditation lancée **à la main** : sa toute 1re lettre est traitée en mode Combat, le mode Méditation
+  s'active dès que la lettre change sans que la case disparaisse (en automatique, le titre du menu suffit).
   Le menu annonce 12 QTE en Extrême mais le jeu en affiche **11** (21 sessions mesurées) : le nombre de
   cases par difficulté est donc **appris en jouant** (2 sessions propres identiques), Extrême connu d'avance.
 - Fin de session = 2,5 s sans case (cases espacées de ~0,9 s observées).
@@ -144,5 +159,6 @@ qte_bot/
   xp.py            compteur d'XP   hud.py/overlay.py HUD          io_win.py   écran, clavier, souris
   config.py        lecture/validation/écriture de config.json    keys.py     noms de touches
   ui/              thème et composants du menu                    gui.py      fenêtre
-tests/             139 tests (vision sur vraies captures, automate, config, clavier…)
+  chain.py         appuis en Méditation (enchaînement)
+tests/             ~210 tests (vision sur vraies captures, automate, Méditation, XP, config, clavier…)
 ```
