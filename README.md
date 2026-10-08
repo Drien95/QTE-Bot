@@ -7,9 +7,13 @@ Version actuelle : **1.0.0** (affichée en haut du menu).
 
 ## Pour jouer (2 minutes)
 
-1. **Dézippe** `QTE-Bot.zip` où tu veux, puis double-clique sur **`QTE-Bot.exe`**.
+1. Double-clique sur **`QTE-Bot-Setup-1.0.0.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
+   pas de Python à installer. Raccourcis créés dans le menu Démarrer (et sur le Bureau si coché).
    Si Windows affiche « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même*
    (le programme n'est pas signé, c'est normal).
+   - **Mettre à jour** : lancer le setup de la nouvelle version, tes réglages sont gardés.
+   - **Désinstaller** : Paramètres Windows → Applications → QTE-Bot (tout est supprimé, réglages compris).
+   - Sans installation : dézippe `QTE-Bot.zip` n'importe où et lance `QTE-Bot.exe`.
 2. Mets Garry's Mod en **fenêtré sans bordure**, sur ton **écran principal**.
 3. Dans le menu :
    - **Tuile QTE** (verte = allumée) : le bot appuie seul sur les touches des QTE. Touche **²** = pause.
@@ -30,9 +34,16 @@ En cas de souci : `qte_bot.log` et `captures/evenements.txt` disent ce que le bo
 
 | Pour | Commande |
 |---|---|
-| Jouer (sans Python) | dézipper `QTE-Bot.zip`, lancer `QTE-Bot.exe` |
+| Jouer (sans Python) | `QTE-Bot-Setup-x.y.z.exe`, ou dézipper `QTE-Bot.zip` et lancer `QTE-Bot.exe` |
 | Développer | `run.bat` (crée `.venv`, installe, lance le menu) |
-| Fabriquer le zip | `build.bat` → `dist/QTE-Bot.zip` (tests obligatoires avant build) |
+| Fabriquer | `build.bat` → `dist/QTE-Bot-Setup-x.y.z.exe` + `dist/QTE-Bot.zip` (tests obligatoires avant build) |
+| Nouvelle version | changer `__version__` dans `qte_bot/__init__.py`, `build.bat`, tag git `vx.y.z` |
+
+Le setup (`installer/QTE-Bot.iss`) demande [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+(`winget install JRSoftware.InnoSetup`) ; sans lui, `build.bat` ne fait que le zip.
+Installation **par utilisateur** dans `%LOCALAPPDATA%\Programs\QTE-Bot` : sans droits administrateur, et le
+dossier reste inscriptible (le programme y écrit `config.json`, son journal et `captures/`).
+Le setup refuse d'écraser les fichiers tant que QTE-Bot tourne (mutex d'instance unique).
 | Tests | `.venv\Scripts\python -m pytest -q` |
 
 Options de `run.bat` : `--console` (sans menu), `--image <png>` (tester la détection sur une capture),
