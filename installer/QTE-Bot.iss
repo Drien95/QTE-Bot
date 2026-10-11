@@ -1,10 +1,12 @@
 ; Installateur de QTE-Bot (Inno Setup 6). Fabriqué par build.bat, qui passe /DAppVersion=x.y.z.
 ;
 ; Deux dossiers, deux rôles (voir qte_bot/paths.py) :
-; - PROGRAMME : %LOCALAPPDATA%\Programs\QTE-Bot  -> géré par ce setup, jamais écrit par le programme ;
+; - PROGRAMME : dossier choisi par le joueur       -> géré par ce setup, jamais écrit par le programme ;
 ; - DONNÉES   : %LOCALAPPDATA%\QTE-Bot           -> config.json, journaux, captures ; créé par le programme au
 ;   1er lancement (depuis config.default.json), jamais touché par une mise à jour.
-; Installation par utilisateur : aucun droit administrateur demandé.
+; Le joueur choisit le dossier du programme et le mode : « pour moi » (sans droits administrateur, défaut :
+; %LOCALAPPDATA%\Programs) ou « pour tous » (administrateur, Program Files). Le programme n'écrivant jamais
+; dans son propre dossier, tout emplacement convient. Une mise à jour reprend le dossier déjà choisi.
 ; Désinstallation : le programme part toujours ; les données seulement si le joueur le confirme.
 
 #ifndef AppVersion
@@ -22,12 +24,14 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher=Adrien
-DefaultDirName={localappdata}\Programs\{#AppName}
+DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-DisableDirPage=yes
+DisableDirPage=no
+UsePreviousAppDir=yes
 DisableReadyPage=yes
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog commandline
 OutputDir=..\dist
 OutputBaseFilename={#AppName}-Setup-{#AppVersion}
 UninstallDisplayIcon={app}\{#AppExe}
@@ -63,7 +67,7 @@ Type: filesandordirs; Name: "{app}\captures"
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
 Name: "{group}\Guide (README)"; Filename: "{app}\README.md"
 Name: "{group}\Désinstaller {#AppName}"; Filename: "{uninstallexe}"
-Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; Flags: nowait postinstall skipifsilent

@@ -7,8 +7,8 @@ Version actuelle : **1.1.0** (affichée en haut du menu).
 
 ## Pour jouer (2 minutes)
 
-1. Double-clique sur **`QTE-Bot-Setup-1.1.0.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
-   pas de Python à installer. Raccourcis créés dans le menu Démarrer (et sur le Bureau si coché).
+1. Double-clique sur **`QTE-Bot-Setup-1.1.0.exe`** : choisis *pour moi seulement* (pas de mot de passe
+   administrateur) et le dossier d'installation, puis *Suivant* → *Terminer*. Pas de Python à installer. Raccourcis créés dans le menu Démarrer (et sur le Bureau si coché).
    Si Windows affiche « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même*
    (le programme n'est pas signé, c'est normal).
    - **Mettre à jour** : lancer le setup de la nouvelle version, tes réglages sont gardés.
@@ -31,7 +31,7 @@ Version actuelle : **1.1.0** (affichée en haut du menu).
 
 | Dossier | Contenu | Qui écrit |
 |---|---|---|
-| `%LOCALAPPDATA%\Programs\QTE-Bot` | le programme (`QTE-Bot.exe`, modèles des lettres, réglages par défaut) | le setup seulement |
+| dossier choisi à l'installation (défaut `%LOCALAPPDATA%\Programs\QTE-Bot`) | le programme (`QTE-Bot.exe`, modèles, réglages par défaut) | le setup seulement |
 | `%LOCALAPPDATA%\QTE-Bot` | **tes données** : `config.json`, `qte_bot.log`, `captures\` | le programme |
 
 Taille des données bornée à ~6 Mo (journaux tournants de 1 Mo), plus 30 Mo si les captures de diagnostic
@@ -56,7 +56,8 @@ a vu et fait.
 
 Le setup (`installer/QTE-Bot.iss`) demande [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 (`winget install JRSoftware.InnoSetup`) ; sans lui, `build.bat` ne fait que le zip.
-Installation **par utilisateur** dans `%LOCALAPPDATA%\Programs\QTE-Bot` (sans droits administrateur).
+Dossier du programme au choix : *pour moi* (sans droits administrateur, défaut `%LOCALAPPDATA%\Programs\QTE-Bot`)
+ou *pour tous* (administrateur, `Program Files`) ; une mise à jour reprend le dossier choisi.
 Programme et données sont séparés (`qte_bot/paths.py`) : installé, les données vont dans `%LOCALAPPDATA%\QTE-Bot`
 (créé au 1er lancement depuis `config.default.json`, ou repris d'une 1.0.x qui les rangeait à côté de l'exe) ;
 en développement, tout reste à la racine du projet. `QTE_BOT_DATA_DIR` force le dossier des données.
