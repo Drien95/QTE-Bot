@@ -10,16 +10,17 @@ import numpy as np
 import pytest
 
 from qte_bot.config import load_config
+from qte_bot.paths import PATHS
 from qte_bot.engine import Engine, insist_plan
 from qte_bot.game_io import GameIo
-from qte_bot.main import ROOT, build_recognizer
+from qte_bot.main import build_recognizer
 
 FIX = Path(__file__).parent / "fixtures"
 
 
 @pytest.fixture(scope="module")
 def cfg():
-    return load_config(ROOT / "config.json")
+    return load_config(PATHS.default_config)
 
 
 def test_engine_without_io_refuses_to_run(cfg):

@@ -9,14 +9,13 @@ from pathlib import Path
 import cv2
 
 from qte_bot.config import Config, load_config
-from qte_bot.paths import APP_DIR
+from qte_bot.paths import PATHS
 from qte_bot.detector import find_prompt
 from qte_bot.recognizer import Recognizer, font_templates, load_templates
 
-ROOT = APP_DIR
-TEMPLATES_DIR = ROOT / "templates"
-CAPTURES_DIR = ROOT / "captures"
-GLYPHS_DIR = CAPTURES_DIR / "lettres"  # lettres brutes en attente d'étiquetage (--label)
+TEMPLATES_DIR = PATHS.templates
+CAPTURES_DIR = PATHS.captures
+GLYPHS_DIR = PATHS.glyphs  # lettres brutes en attente d'étiquetage (--label)
 
 
 def build_recognizer(cfg: Config) -> Recognizer:
@@ -50,7 +49,7 @@ def run_console(cfg: Config) -> int:
     return 0
 
 
-LOG_FILE = ROOT / "qte_bot.log"
+LOG_FILE = PATHS.log
 LOG_MAX_BYTES = 1_000_000
 INSTANCE_NAME = "Local\\QteBot_AutoPrompt"
 WINDOW_TITLE = "QTE Bot"
@@ -58,11 +57,16 @@ WINDOW_TITLE = "QTE Bot"
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Appuie automatiquement sur la touche affichée dans la case QTE.")
-    parser.add_argument("--config", type=Path, default=ROOT / "config.json")
+    parser.add_argument("--config", type=Path, default=PATHS.config)
     parser.add_argument("--console", action="store_true", help="sans menu, messages dans la console")
     parser.add_argument("--label", action="store_true", help="étiqueter les lettres capturées pour en faire des modèles")
     parser.add_argument("--image", type=Path, help="tester la détection sur une capture d'écran au lieu de l'écran")
     args = parser.parse_args(argv)
+    if args.config == PATHS.config:
+        from qte_bot.storage import prepare
+        done = prepare(PATHS)
+        if done:
+            print(done)
     cfg = load_config(args.config)
     if args.label:
         from qte_bot.labeler import label_glyphs
@@ -85,7 +89,7 @@ def run_single(cfg: Config, args: argparse.Namespace) -> int:
         if args.console:
             return run_console(cfg)
         from qte_bot.gui import run_gui
-        return run_gui(cfg, args.config, build_recognizer(cfg), CAPTURES_DIR)
+        return run_gui(cfg, args.config, build_recognizer(cfg), PATHS)
     finally:
         lock.release()
 
@@ -96,6 +100,7 @@ def _setup_output() -> None:
     Mode ajout (un 2e lancement refusé ne doit pas vider le log de l'instance en cours), rotation au-delà de 1 Mo.
     """
     if sys.stdout is None or sys.stderr is None:
+        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         if LOG_FILE.exists() and LOG_FILE.stat().st_size > LOG_MAX_BYTES:
             LOG_FILE.replace(LOG_FILE.with_suffix(".old.log"))
         log = LOG_FILE.open("a", encoding="utf-8", buffering=1)

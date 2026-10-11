@@ -3,16 +3,17 @@
 Bot Windows pour les QTE de l'entraînement (Combat et Méditation) sur Garry's Mod, serveur EVO Bleach RP :
 détecte la case à l'écran, lit la lettre, appuie sur la touche ; peut enchaîner les sessions d'entraînement seul.
 
-Version actuelle : **1.0.1** (affichée en haut du menu).
+Version actuelle : **1.1.0** (affichée en haut du menu).
 
 ## Pour jouer (2 minutes)
 
-1. Double-clique sur **`QTE-Bot-Setup-1.0.1.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
+1. Double-clique sur **`QTE-Bot-Setup-1.1.0.exe`** → *Suivant* → *Terminer*. Pas de mot de passe administrateur,
    pas de Python à installer. Raccourcis créés dans le menu Démarrer (et sur le Bureau si coché).
    Si Windows affiche « Windows a protégé votre ordinateur » : *Informations complémentaires* → *Exécuter quand même*
    (le programme n'est pas signé, c'est normal).
    - **Mettre à jour** : lancer le setup de la nouvelle version, tes réglages sont gardés.
-   - **Désinstaller** : Paramètres Windows → Applications → QTE-Bot (tout est supprimé, réglages compris).
+   - **Désinstaller** : Paramètres Windows → Applications → QTE-Bot. Le setup demande si tu veux aussi
+     supprimer tes réglages et journaux (par défaut : non, ils seront repris si tu réinstalles).
    - Sans installation : dézippe `QTE-Bot.zip` n'importe où et lance `QTE-Bot.exe`.
 2. Mets Garry's Mod en **fenêtré sans bordure**, sur ton **écran principal**.
 3. Dans le menu :
@@ -22,10 +23,24 @@ Version actuelle : **1.0.1** (affichée en haut du menu).
    - Clique sur les **pastilles colorées** pour choisir les difficultés jouées.
    - Carte **Touches** : clique sur une touche puis appuie sur celle que tu veux.
 4. Fermer la fenêtre (ou **F10**) arrête tout. Tout réglage est enregistré automatiquement.
+5. Carte **Journaux et diagnostic** : place occupée, bouton **Purger** (supprime journaux et captures, garde
+   les réglages), **Ouvrir le dossier**. La case *Captures de diagnostic* garde une image de chaque case
+   (300 max, ~30 Mo) : à cocher seulement pour montrer un problème de lecture.
+
+### Où sont les fichiers
+
+| Dossier | Contenu | Qui écrit |
+|---|---|---|
+| `%LOCALAPPDATA%\Programs\QTE-Bot` | le programme (`QTE-Bot.exe`, modèles des lettres, réglages par défaut) | le setup seulement |
+| `%LOCALAPPDATA%\QTE-Bot` | **tes données** : `config.json`, `qte_bot.log`, `captures\` | le programme |
+
+Taille des données bornée à ~6 Mo (journaux tournants de 1 Mo), plus 30 Mo si les captures de diagnostic
+sont activées. Une mise à jour ne touche jamais à ce dossier.
 
 Le bot n'agit **que** si Garry's Mod est la fenêtre active, et s'arrête seul si le katana n'est pas en main
 (Combat), si tu sors du cercle, ou à la limite de sessions/minutes.
-En cas de souci : `qte_bot.log` et `captures/evenements.txt` disent ce que le bot a vu et fait.
+En cas de souci : `qte_bot.log` et `captures/evenements.txt` (dans le dossier des données) disent ce que le bot
+a vu et fait.
 
 > Automatiser un jeu en ligne est souvent interdit par le règlement des serveurs : vérifie le tien,
 > c'est ton compte qui est en jeu.
@@ -41,8 +56,11 @@ En cas de souci : `qte_bot.log` et `captures/evenements.txt` disent ce que le bo
 
 Le setup (`installer/QTE-Bot.iss`) demande [Inno Setup 6](https://jrsoftware.org/isinfo.php)
 (`winget install JRSoftware.InnoSetup`) ; sans lui, `build.bat` ne fait que le zip.
-Installation **par utilisateur** dans `%LOCALAPPDATA%\Programs\QTE-Bot` : sans droits administrateur, et le
-dossier reste inscriptible (le programme y écrit `config.json`, son journal et `captures/`).
+Installation **par utilisateur** dans `%LOCALAPPDATA%\Programs\QTE-Bot` (sans droits administrateur).
+Programme et données sont séparés (`qte_bot/paths.py`) : installé, les données vont dans `%LOCALAPPDATA%\QTE-Bot`
+(créé au 1er lancement depuis `config.default.json`, ou repris d'une 1.0.x qui les rangeait à côté de l'exe) ;
+en développement, tout reste à la racine du projet. `QTE_BOT_DATA_DIR` force le dossier des données.
+`config.json` (réglages perso) n'est pas versionné : la référence est `config.default.json`.
 Le setup refuse d'écraser les fichiers tant que QTE-Bot tourne (mutex d'instance unique).
 | Tests | `.venv\Scripts\python -m pytest -q` |
 
@@ -129,7 +147,7 @@ menu (automatisation) ou dès que la lettre change sans que la case disparaisse 
   automatiquement par `tests/conftest.py`) neutralise tout envoi au niveau de `SendInput`.
 - Config écrite via fichier temporaire validé : jamais de `config.json` cassé ; journaux bornés à 1 Mo.
 
-## Configuration (`config.json`)
+## Configuration (`config.json`, dans le dossier des données)
 
 Tout se règle depuis le menu (enregistrement automatique). Champs avancés, à la main :
 
@@ -138,7 +156,7 @@ Tout se règle depuis le menu (enregistrement automatique). Champs avancés, à 
 | `allowed_keys` | lettres de QTE possibles (`azeqsdwx`) |
 | `min_score`, `min_margin` | seuils de lecture des lettres |
 | `game_process` | exécutable du jeu (garde-fou premier plan) |
-| `save_captures` | `true` = image annotée de chaque case dans `captures/` (diagnostic) |
+| `save_captures` | `true` = image de chaque case dans `captures/` (diagnostic, aussi dans le menu) |
 | `roi` | fraction de l'écran principal surveillée |
 
 ## Hypothèses et limites connues
@@ -171,7 +189,8 @@ qte_bot/
   autopilot.py     automate        auto_driver.py branchement     screen_ui.py menu / katana
   xp.py            compteur d'XP   hud.py/overlay.py HUD          io_win.py   écran, clavier, souris
   config.py        lecture/validation/écriture de config.json    keys.py     noms de touches
+  paths.py         dossiers programme / données                   storage.py  1er lancement, purge
   ui/              thème et composants du menu                    gui.py      fenêtre
   chain.py         appuis en Méditation (enchaînement)
-tests/             ~210 tests (vision sur vraies captures, automate, Méditation, XP, config, clavier…)
+tests/             ~230 tests (vision sur vraies captures, automate, Méditation, XP, config, clavier…)
 ```

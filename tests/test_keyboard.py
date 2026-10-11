@@ -11,6 +11,7 @@ import pytest
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows uniquement")
 
 from qte_bot.io_win import press_key, scancode_for  # noqa: E402
+from qte_bot.paths import PATHS
 
 user32 = ctypes.windll.user32 if sys.platform == "win32" else None
 
@@ -28,9 +29,8 @@ def test_scancode_matches_active_layout(char):
 def test_injected_key_is_seen_as_that_letter(char, monkeypatch):
     from qte_bot.config import load_config
     from qte_bot.io_win import DRY_RUN_ENV, foreground_process
-    from qte_bot.main import ROOT
-
-    game = load_config(ROOT / "config.json").game_process
+    
+    game = load_config(PATHS.default_config).game_process
     if foreground_process() == game:
         pytest.skip(f"{game} est au premier plan : refus de taper de vraies touches dans le jeu")
     monkeypatch.delenv(DRY_RUN_ENV)  # seul test autorisé à lever le verrou, et seulement sur demande explicite

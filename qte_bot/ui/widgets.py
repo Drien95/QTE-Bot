@@ -99,3 +99,13 @@ def check(parent: tk.Widget, text: str, var: tk.BooleanVar, on_change: Callable[
     return tk.Checkbutton(parent, text=text, variable=var, command=on_change, bg=parent["bg"], fg=t.TEXT,
                           selectcolor=t.CARD_HI, activebackground=parent["bg"], activeforeground=t.TEXT,
                           font=t.FONT, highlightthickness=0, bd=0)
+
+
+def button(parent: tk.Widget, text: str, command: Callable[[], None], danger: bool = False) -> tk.Label:
+    """Bouton plat (un Label cliquable : rendu identique sur toutes les versions de Windows)."""
+    fg = t.RED if danger else t.CYAN
+    btn = tk.Label(parent, text=text, font=t.FONT_BOLD, bg=t.CARD_HI, fg=fg, cursor="hand2", padx=10, pady=4)
+    btn.bind("<Button-1>", lambda _e: command())
+    btn.bind("<Enter>", lambda _e: btn.config(bg=t.BORDER))
+    btn.bind("<Leave>", lambda _e: btn.config(bg=t.CARD_HI))
+    return btn

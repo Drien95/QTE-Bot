@@ -1,10 +1,11 @@
 ; Installateur de QTE-Bot (Inno Setup 6). Fabriqué par build.bat, qui passe /DAppVersion=x.y.z.
 ;
-; Choix :
-; - installation PAR UTILISATEUR (%LOCALAPPDATA%\Programs\QTE-Bot) : aucun droit administrateur demandé, et le
-;   dossier reste inscriptible (le programme y écrit config.json, qte_bot.log et captures\) ;
-; - mise à jour = relancer un setup plus récent : les réglages (config.json) sont conservés ;
-; - désinstallation complète (Paramètres Windows > Applications) : programme, réglages et journaux supprimés.
+; Deux dossiers, deux rôles (voir qte_bot/paths.py) :
+; - PROGRAMME : %LOCALAPPDATA%\Programs\QTE-Bot  -> géré par ce setup, jamais écrit par le programme ;
+; - DONNÉES   : %LOCALAPPDATA%\QTE-Bot           -> config.json, journaux, captures ; créé par le programme au
+;   1er lancement (depuis config.default.json), jamais touché par une mise à jour.
+; Installation par utilisateur : aucun droit administrateur demandé.
+; Désinstallation : le programme part toujours ; les données seulement si le joueur le confirme.
 
 #ifndef AppVersion
   #error "Version manquante : lancer build.bat (ou ISCC /DAppVersion=x.y.z)"
@@ -48,9 +49,15 @@ Name: "fr"; MessagesFile: "compiler:Languages\French.isl"
 Name: "desktopicon"; Description: "Créer un raccourci sur le Bureau"; GroupDescription: "Raccourcis :"
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}"; Excludes: "config.json"; Flags: ignoreversion recursesubdirs createallsubdirs
-; Réglages du joueur : posés à la 1re installation seulement, jamais écrasés par une mise à jour.
-Source: "{#DistDir}\config.json"; DestDir: "{app}"; Flags: onlyifdoesntexist
+Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+; Mise à jour depuis 1.0.x : journaux et captures vivaient à côté de l'exe. On les retire ; config.json reste
+; le temps que le programme le reprenne dans le dossier des données au prochain lancement.
+Type: files; Name: "{app}\qte_bot.log"
+Type: files; Name: "{app}\qte_bot.old.log"
+Type: files; Name: "{app}\config.tmp"
+Type: filesandordirs; Name: "{app}\captures"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExe}"
@@ -62,10 +69,25 @@ Name: "{userdesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 Filename: "{app}\{#AppExe}"; Description: "Lancer {#AppName}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Fichiers créés par le programme lui-même (absents du setup) : sinon le dossier resterait après désinstallation.
+; Restes éventuels d'une 1.0.x (réglages à côté de l'exe), sinon le dossier du programme resterait.
 Type: files; Name: "{app}\config.json"
-Type: files; Name: "{app}\config.json.tmp"
-Type: files; Name: "{app}\qte_bot.log"
-Type: files; Name: "{app}\qte_bot.old.log"
-Type: filesandordirs; Name: "{app}\captures"
 Type: dirifempty; Name: "{app}"
+
+[Code]
+const
+  DataDirName = '{localappdata}\QTE-Bot';
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  DataDir: String;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+  DataDir := ExpandConstant(DataDirName);
+  { Silencieux (script, mise à jour forcée) : on garde les données, c'est l'option qui ne détruit rien. }
+  if UninstallSilent or not DirExists(DataDir) then
+    Exit;
+  if MsgBox('Supprimer aussi tes réglages, journaux et captures ?' + #13#10 + DataDir + #13#10#13#10 +
+            'Non = ils seront repris si tu réinstalles QTE-Bot.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
+    DelTree(DataDir, True, True, True);
+end;

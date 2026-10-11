@@ -1,2 +1,2 @@
 """QTE-Bot : QTE et entraînement automatiques (Garry's Mod, EVO Bleach RP)."""
-__version__ = "1.0.1"
+__version__ = "1.1.0"

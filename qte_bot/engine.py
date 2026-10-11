@@ -24,6 +24,7 @@ from qte_bot.tracker import MAX_PRESSES, PressTracker
 
 ACCEPTED_MAX_MS = 150  # case disparue moins de 150 ms après l'appui = le jeu a pris la touche
 MAX_AUTO_SAVES = 300   # borne : un raté en boucle ne doit pas remplir le disque
+SCENE_MARGIN_PX = 200  # capture de diagnostic recadrée autour de la case (~100 Ko au lieu de ~1,7 Mo)
 INSIST_EVERY_MS = 150  # case encore là après l'appui = pas prise : on réappuie à ce rythme (plafonné)
 MAX_UNSURE_GLYPHS = 200  # lettres douteuses gardées pour apprendre des variantes (≈100 octets chacune)
 OPENCV_THREADS = 1       # mesuré : 1 thread = 60 % d'un cœur, multi-thread = 141 % pour la même cadence
@@ -104,6 +105,7 @@ class Engine:
         self._enabled = True
         self._stop = threading.Event()
         self._saved = 0
+        self._save_captures = self.cfg.save_captures
         self._last_frame: np.ndarray | None = None
         self._origin = (0, 0)  # coin haut-gauche de la zone capturée, en coordonnées écran
         self._foreground_warned = False
@@ -129,6 +131,9 @@ class Engine:
     def set_repress(self, on: bool) -> None:
         with self._lock:
             self._repress, self._rebuild = on, True
+
+    def set_save_captures(self, on: bool) -> None:
+        self._save_captures = on
 
     def set_turbo(self, on: bool) -> None:
         with self._lock:
@@ -332,7 +337,7 @@ class Engine:
         self._journal(line)
         if s.unsure is not None:
             self._keep_unsure_glyph(*s.unsure)
-        if self.cfg.save_captures and self._saved < MAX_AUTO_SAVES:  # diagnostic seulement
+        if self._save_captures and self._saved < MAX_AUTO_SAVES:  # diagnostic seulement
             self._save_scene(s, verdict)
             self._saved += 1
 
@@ -373,5 +378,6 @@ class Engine:
         text = f"{verdict} | lu '{s.best.guess}' score {s.best.score:.2f}"
         cv2.putText(scene, text, (max(0, b.x - 60), max(15, b.y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
         tag = {"PRIS": "pris", "IGNORÉ ?": "ignore"}.get(verdict, "rate")
-        self._save(scene, f"{s.best.guess}_{tag}")
+        m = SCENE_MARGIN_PX
+        self._save(scene[max(0, b.y - m): b.y + b.h + m, max(0, b.x - m): b.x + b.w + m], f"{s.best.guess}_{tag}")
         self._save(snap.mask, f"{s.best.guess}_{tag}", sub="lettres")

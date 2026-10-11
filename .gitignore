@@ -4,7 +4,9 @@ __pycache__/
 .pytest_cache/
 *.tmp
 
-# Données produites à l'exécution (locales à chaque joueur)
+# Données produites à l'exécution (locales à chaque joueur ; réglages par défaut : config.default.json)
+config.json
+config.tmp
 captures/
 qte_bot.log
 qte_bot.old.log

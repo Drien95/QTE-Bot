@@ -6,6 +6,7 @@ import pytest
 
 from qte_bot.detector import find_prompt
 from qte_bot.recognizer import Recognizer, font_templates
+from qte_bot.paths import PATHS
 
 FIXTURE = Path(__file__).parent / "fixtures" / "sample_w.png"
 
@@ -79,11 +80,11 @@ def test_round_button_and_character_are_not_boxes():
 
 def test_game_templates_read_the_full_screen_e():
     from qte_bot.config import load_config
-    from qte_bot.main import ROOT, build_recognizer
+    from qte_bot.main import build_recognizer
 
     gray = cv2.imread(str(FULL_E), cv2.IMREAD_GRAYSCALE)
     prompt = find_prompt(gray, min_side=30, max_side=160)
-    match = build_recognizer(load_config(ROOT / "config.json")).classify(prompt.glyph)
+    match = build_recognizer(load_config(PATHS.default_config)).classify(prompt.glyph)
     assert match.label == "e"
 
 
@@ -95,9 +96,9 @@ def test_game_templates_read_real_game_glyphs(path):
     # Lettres réellement capturées en jeu ; le nom du fichier commence par la bonne lettre.
     from qte_bot.config import load_config
     from qte_bot.detector import normalize_glyph
-    from qte_bot.main import ROOT, build_recognizer
+    from qte_bot.main import build_recognizer
 
-    recognizer = build_recognizer(load_config(ROOT / "config.json"))
+    recognizer = build_recognizer(load_config(PATHS.default_config))
     mask = np.where(cv2.imread(str(path), cv2.IMREAD_GRAYSCALE) >= 128, 255, 0).astype(np.uint8)
     match = recognizer.classify(normalize_glyph(mask), mask)
     assert match.label == path.stem[0], f"lu {match.guess} score {match.score:.2f} marge {match.margin:.2f}"
@@ -106,8 +107,8 @@ def test_game_templates_read_real_game_glyphs(path):
 
 def test_all_allowed_letters_have_game_templates():
     from qte_bot.config import load_config
-    from qte_bot.main import ROOT, TEMPLATES_DIR
+    from qte_bot.main import TEMPLATES_DIR
     from qte_bot.recognizer import load_templates
 
-    cfg = load_config(ROOT / "config.json")
+    cfg = load_config(PATHS.default_config)
     assert {t.label for t in load_templates(TEMPLATES_DIR, cfg.allowed_keys)} == set(cfg.allowed_keys)

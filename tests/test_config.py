@@ -5,7 +5,7 @@ import pytest
 
 from qte_bot.config import load_config
 
-ROOT_CONFIG = Path(__file__).resolve().parent.parent / "config.json"
+ROOT_CONFIG = Path(__file__).resolve().parent.parent / "config.default.json"
 
 
 def write(tmp_path: Path, **overrides) -> Path:

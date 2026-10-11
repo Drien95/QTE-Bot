@@ -9,11 +9,14 @@ from pathlib import Path
 
 from qte_bot import __version__
 from qte_bot.autopilot import DIFFICULTY_NAMES, AutoSettings
-from qte_bot.config import Config, load_config, save_auto, save_hotkeys, save_repress, save_timing, save_turbo
+from qte_bot.config import (Config, load_config, save_auto, save_diagnostics, save_hotkeys, save_repress, save_timing,
+                             save_turbo)
 from qte_bot.engine import Engine, Timing
 from qte_bot.hud import HudFeed, HudStatus
 from qte_bot.keys import key_label, spec_from_event
+from qte_bot.paths import AppPaths
 from qte_bot.recognizer import Recognizer
+from qte_bot.storage import human_size, logs_size, purge
 from qte_bot.textlog import append_line
 from qte_bot.ui import theme as t
 from qte_bot.ui import widgets as w
@@ -21,15 +24,16 @@ from qte_bot.ui import widgets as w
 POLL_MS = 100
 SAVE_DEBOUNCE_MS = 500   # on enregistre 0,5 s après la dernière modification (pas à chaque flèche)
 MAX_LOG_LINES = 300
+SIZE_REFRESH_MS = 5000  # taille des journaux relue toutes les 5 s (quelques centaines de fichiers au plus)
 HOTKEY_ROWS = (("toggle", "QTE marche / pause"), ("auto", "Automatisation marche / arrêt"), ("quit", "Quitter le programme"))
 
 
 class App:
-    def __init__(self, root: tk.Tk, cfg: Config, config_path: Path, engine: Engine):
-        self.root, self.config_path, self.engine = root, config_path, engine
+    def __init__(self, root: tk.Tk, cfg: Config, config_path: Path, engine: Engine, paths: AppPaths):
+        self.root, self.config_path, self.engine, self.paths = root, config_path, engine, paths
         self.events: queue.Queue[str] = queue.Queue()
         engine.emit = self._emit  # le moteur tourne dans un autre thread : passage par une file
-        self._event_log = engine.captures_dir / "evenements.txt"
+        self._event_log = paths.event_log
         self._init_vars(cfg)
         self._pending: dict[str, str] = {}   # section -> identifiant du `after` d'enregistrement
         self._capture: tuple[str, w.KeyButton] | None = None
@@ -46,6 +50,7 @@ class App:
         self.interact_key = a.interact_key
         self.hotkey_names = dict(cfg.hotkey_names)
         self.hud_on = tk.BooleanVar(value=True)
+        self.diagnostics = tk.BooleanVar(value=cfg.save_captures)
         self.status = tk.StringVar(value="Réglages enregistrés automatiquement")
 
     # ---------- construction ----------
@@ -64,6 +69,7 @@ class App:
         left.pack(side="left", fill="both", expand=True, padx=(0, 5))
         right.pack(side="left", fill="both", expand=True, padx=(5, 0))
         self._auto_card(left)
+        self._data_card(left)
         self._qte_card(right)
         self._keys_card(right)
         self._footer(body)
@@ -114,6 +120,20 @@ class App:
         self._field(grid, 0, "Pause entre sessions (secondes)", (self.pause_min, self.pause_max), 0, 3600, 1, "auto")
         self._field(grid, 1, "Arrêt après … sessions", (self.max_sessions,), 1, 10000, 1, "auto")
         self._field(grid, 2, "Arrêt après … minutes (0 = jamais)", (self.max_minutes,), 0, 1440, 5, "auto")
+
+    def _data_card(self, parent: tk.Frame) -> None:
+        box = w.card(parent, "Journaux et diagnostic")
+        w.check(box, "Captures de diagnostic", self.diagnostics, self._toggle_diagnostics).pack(anchor="w")
+        w.label(box, "Garde une image de chaque case (cadre vert = touche prise, rouge = ratée) dans le dossier captures.\n"
+                     "À activer seulement pour montrer un problème de lecture ; 300 images max (~30 Mo).",
+                muted=True, justify="left").pack(anchor="w", pady=(0, 8))
+        row = tk.Frame(box, bg=t.CARD)
+        row.pack(fill="x")
+        self.size_label = w.label(row, "", muted=True)
+        self.size_label.pack(side="left")
+        w.button(row, "Ouvrir le dossier", self._open_data).pack(side="right")
+        w.button(row, "Purger", self._purge, danger=True).pack(side="right", padx=(0, 6))
+        self._refresh_size()
 
     def _qte_card(self, parent: tk.Frame) -> None:
         box = w.card(parent, "QTE")
@@ -245,6 +265,43 @@ class App:
         self._say("⚡ Turbo : tout au minimum (appui immédiat + insistance, aucune pause)" if on
                   else "Turbo désactivé : tes réglages de délai et de pause s'appliquent", t.AMBER if on else t.MUTED)
 
+    def _toggle_diagnostics(self) -> None:
+        on = self.diagnostics.get()
+        try:
+            save_diagnostics(self.config_path, on)
+        except ValueError as exc:
+            return self._say(f"⚠ {exc}", t.RED)
+        self.engine.set_save_captures(on)
+        self._say("Captures de diagnostic activées (300 max)" if on else "Captures de diagnostic désactivées",
+                  t.AMBER if on else t.MUTED)
+
+    def _purge(self) -> None:
+        import tkinter.messagebox as box
+
+        size = logs_size(self.paths)
+        if not size:
+            return self._say("Rien à purger", t.MUTED)
+        if not box.askyesno("Purger", f"Supprimer les journaux et captures ({human_size(size)}) ?\n"
+                                      "Tes réglages et tes statistiques en cours sont conservés.", parent=self.root):
+            return
+        report = purge(self.paths)
+        self._refresh_size()
+        if report.failed:  # fichier en cours d'écriture : on le dit, on ne prétend pas avoir tout effacé
+            return self._say(f"⚠ {human_size(report.freed)} libérés, non supprimé : {', '.join(report.failed)}", t.AMBER)
+        self._say(f"✓ Journaux purgés : {human_size(report.freed)} libérés", t.GREEN)
+
+    def _open_data(self) -> None:
+        import os
+
+        os.startfile(self.paths.data)  # noqa: S606 — dossier à nous, ouvert dans l'Explorateur
+
+    def _refresh_size(self) -> None:
+        try:
+            text = f"Occupé : {human_size(logs_size(self.paths))}"
+        except OSError as exc:
+            text = f"Taille inconnue ({exc.strerror or exc})"
+        self.size_label.config(text=text)
+
     def _toggle_hud(self) -> None:
         if self.overlay is not None:
             self.overlay.set_visible(self.hud_on.get())
@@ -313,14 +370,14 @@ class App:
         self.root.after(POLL_MS, self.poll)
 
 
-def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir: Path) -> int:
+def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, paths: AppPaths) -> int:
     _dpi_aware()  # sinon tkinter et la capture ne parlent pas des mêmes pixels sur écran mis à l'échelle
     feed = HudFeed()
     from qte_bot.io_win import real_io
 
-    engine = Engine(cfg, recognizer, captures_dir, hud=feed, io=real_io())
+    engine = Engine(cfg, recognizer, paths.captures, hud=feed, io=real_io())
     root = tk.Tk()
-    app = App(root, cfg, config_path, engine)
+    app = App(root, cfg, config_path, engine, paths)
     app.overlay = _start_overlay(root, cfg, feed, app)
     worker = threading.Thread(target=_run_engine, args=(engine, app.events), daemon=True)
     worker.start()
@@ -340,6 +397,12 @@ def run_gui(cfg: Config, config_path: Path, recognizer: Recognizer, captures_dir
     root.protocol("WM_DELETE_WINDOW", close)
     app.poll()
     watch_engine()
+
+    def refresh_size() -> None:
+        app._refresh_size()
+        root.after(SIZE_REFRESH_MS, refresh_size)
+
+    root.after(SIZE_REFRESH_MS, refresh_size)
     root.mainloop()
     return 0
 

@@ -157,6 +157,10 @@ def save_turbo(path: Path, enabled: bool) -> None:
     _save(path, turbo=enabled)
 
 
+def save_diagnostics(path: Path, enabled: bool) -> None:
+    _save(path, save_captures=enabled)
+
+
 def _save(path: Path, **changes) -> None:
     """Écrit dans un fichier temporaire, le valide, puis remplace : jamais de config cassée sur disque."""
     raw = json.loads(path.read_text(encoding="utf-8"))
