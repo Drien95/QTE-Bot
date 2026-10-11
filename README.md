@@ -62,6 +62,8 @@ Programme et données sont séparés (`qte_bot/paths.py`) : installé, les donn�
 en développement, tout reste à la racine du projet. `QTE_BOT_DATA_DIR` force le dossier des données.
 `config.json` (réglages perso) n'est pas versionné : la référence est `config.default.json`.
 Le setup refuse d'écraser les fichiers tant que QTE-Bot tourne (mutex d'instance unique).
+Désinstallation scriptée : `unins000.exe /VERYSILENT /DELETEDATA=yes` (ou `no`) ; silencieuse sans
+`/DELETEDATA`, les données sont gardées.
 | Tests | `.venv\Scripts\python -m pytest -q` |
 
 Options de `run.bat` : `--console` (sans menu), `--image <png>` (tester la détection sur une capture),

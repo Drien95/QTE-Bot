@@ -77,6 +77,23 @@ Type: dirifempty; Name: "{app}"
 const
   DataDirName = '{localappdata}\QTE-Bot';
 
+{ Supprimer les données ? /DELETEDATA=yes|no (scripts, tests) ; sinon on demande ; en silencieux sans
+  réponse : on garde, c'est l'option qui ne détruit rien. }
+function ShouldDeleteData(DataDir: String): Boolean;
+var
+  Answer: String;
+begin
+  Answer := Lowercase(ExpandConstant('{param:DELETEDATA|ask}'));
+  if Answer = 'yes' then
+    Result := True
+  else if (Answer = 'no') or UninstallSilent then
+    Result := False
+  else
+    Result := MsgBox('Supprimer aussi tes réglages, journaux et captures ?' + #13#10 + DataDir + #13#10#13#10 +
+                     'Non = ils seront repris si tu réinstalles QTE-Bot.', mbConfirmation,
+                     MB_YESNO or MB_DEFBUTTON2) = IDYES;
+end;
+
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   DataDir: String;
@@ -84,10 +101,8 @@ begin
   if CurUninstallStep <> usPostUninstall then
     Exit;
   DataDir := ExpandConstant(DataDirName);
-  { Silencieux (script, mise à jour forcée) : on garde les données, c'est l'option qui ne détruit rien. }
-  if UninstallSilent or not DirExists(DataDir) then
-    Exit;
-  if MsgBox('Supprimer aussi tes réglages, journaux et captures ?' + #13#10 + DataDir + #13#10#13#10 +
-            'Non = ils seront repris si tu réinstalles QTE-Bot.', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-    DelTree(DataDir, True, True, True);
+  if DirExists(DataDir) and ShouldDeleteData(DataDir) then
+    if not DelTree(DataDir, True, True, True) then
+      SuppressibleMsgBox('Impossible de supprimer entièrement ' + DataDir + ' (fichier ouvert ?). ' +
+                         'Supprime-le à la main.', mbError, MB_OK, IDOK);
 end;
